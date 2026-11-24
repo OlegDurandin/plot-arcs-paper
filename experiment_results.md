@@ -15,7 +15,7 @@
 - Отчёт: `reports/00_inventory.md` (+ версия по выборке `reports/00_inventory_sample0.02.md`).
 
 **Параметры:** `configs/s00_inventory.yaml` (хеш `e0732a44b2`), код `src/s00_inventory.py`, `src/s00_report.py`;
-окружение `.venv` (Python 3.12), `requirements.txt`; коммит — см. `git log` (первый коммит «Stage 0»).
+окружение `.venv` (Python 3.12), `requirements.txt`; коммит `d1c4f84`.
 
 **Результаты (чистые тексты: без пустых, точных и почти-дублей):**
 
