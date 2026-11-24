@@ -1,0 +1,53 @@
+# Этап 2 — эмоциональный канал
+seed: 42
+s01_run: data/processed/s01_1700a4b18d
+analysis_set: data/interim/analysis_set.parquet
+out_dir: data/processed/s02
+external_dir: data/external/lexicons
+
+lexicons:
+  rusentilex:
+    url: http://www.labinform.ru/pub/rusentilex/rusentilex_2017.txt
+    license: "свободная загрузка для исследований, ссылка на Loukachevitch & Levchik (LREC 2016); явной лицензии на странице нет"
+  linis_crowd:
+    # linis-crowd.org перехвачен (реклама казино) — оригинальный архив из Wayback Machine (снимок 2022-04-01)
+    url: http://web.archive.org/web/20220401110419id_/http://www.linis-crowd.org/static/dictionary_documents.zip
+    license: "CC BY-NC-SA 4.0 (по документации rulexicon)"
+  nrc_emolex:
+    url: https://saifmohammad.com/WebDocs/Lexicons/NRC-Emotion-Lexicon.zip
+    license: "NRC Emotion Lexicon: бесплатно для исследований / некоммерческого использования (условия на saifmohammad.com); русская версия — машинный перевод"
+
+models:
+  sentiment:
+    hf: seara/rubert-tiny2-russian-sentiment
+    revision: ad9be38671   # sha коммита на HF при загрузке (2026-11-24)
+    license: MIT
+    labels: [neutral, positive, negative]   # score = P(positive) − P(negative)
+  emotion:
+    hf: cointegrated/rubert-tiny2-cedr-emotion-detection
+    revision: 453ae93ca8   # sha коммита на HF при загрузке (2026-11-24)
+    license: "не указана в карточке модели (базовая rubert-tiny2 — MIT; данные CEDR); использовать только в исследовательских целях"
+    labels: [no_emotion, joy, sadness, surprise, fear, anger]   # многоклассовая с несколькими метками (sigmoid)
+  device: mps
+  max_tokens: 512
+  batch_size: 64
+
+segments: [10, 20]           # N, для которых считаются все сигналы
+
+coverage:
+  N: 20
+
+gold:
+  n_total: 400
+  afanasyev_min: 60          # из base_magic600: короткие сегменты сказок
+  forms: [fanfic, story, novella, povest, novel]   # остальное делится поровну между формами
+  max_per_text: 2
+  units: [text, linked_work]
+  emotions: [радость, грусть, гнев, страх, удивление, отвращение, нейтрально]
+  # Длинные сегменты (повесть/роман: медиана 908 и 2 526 слов) целиком размечать нереально (~ 235 тыс. слов) и
+  # ненадёжно (тональность внутри сегмента меняется). Сегменты длиннее excerpt_if_longer показываются связным отрывком
+  # целыми предложениями ~ excerpt_words слов из случайного места сегмента; сигналы для валидации считаются на нём же.
+  # null — показывать целые сегменты.
+  excerpt_if_longer: 600
+  excerpt_words: 350
+  one_text_per_author: true
