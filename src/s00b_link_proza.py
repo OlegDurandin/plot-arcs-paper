@@ -117,7 +117,7 @@ def main():
     cap = lc["max_chapter_number"]
     d = pd.read_parquet(ROOT / cfg["out_dir"] / "manifest.parquet",
                         columns=["doc_id", "corpus", "form", "author_id", "title", "n_words", "pz_published",
-                                 "is_exact_dup", "verse_like"])
+                                 "is_exact_dup", "verse_like", "tail_continuation", "tail_end_marker"])
     d = d[(d["corpus"] == "proza") & d["form"].isin(lc["include_forms"]) & ~d["is_exact_dup"]]
     authors = set(d.loc[d["form"].isin(lc["forms"]), "author_id"])
     d = d[d["author_id"].isin(authors)].copy()
@@ -157,9 +157,20 @@ def main():
         gg = gg.sort_values(num_cols + ["pz_published"], na_position="last") if order_by_num else gg
         lf = g[g["form"].isin(lc["forms"])]
         wid = "pzw:" + key
+        last = gg.iloc[-1]
+        if gg["is_end"].any() or last["tail_end_marker"]:
+            complete, csrc = "true", "end_marker"
+        elif last["tail_continuation"]:
+            complete, csrc = "false", "continuation_marker"
+        else:
+            complete, csrc = "unknown", "no_marker"
+        total = int(gg["n_words"].sum())
+        thr = cfg["selection"]["long_form_min_words"]
+        form_len = "novel" if total >= thr["novel"] else "povest" if total >= thr["povest"] else "short_series"
         works.append(dict(
             work_id=wid, author_id=gg["author_id"].iat[0], stem=gg["stem"].iat[0],
-            form=lf["form"].mode().iat[0], forms=",".join(sorted(set(gg["form"]))),
+            form=form_len, form_rubric=lf["form"].mode().iat[0], forms=",".join(sorted(set(gg["form"]))),
+            is_complete=complete, is_complete_source=csrc,
             n_records=len(gg), n_dup_chapters=int(g["dup_chapter"].sum()),
             n_numbered=len(nn), n_words=int(gg["n_words"].sum()),
             first=gg["pz_published"].min(), last=gg["pz_published"].max(),
@@ -193,7 +204,15 @@ def main():
         rows.append(f"| {name} | {len(s)} | {s['author_id'].nunique()} | {int(s['n_records'].sum())} | "
                     f"{int(s['n_words'].median()) if len(s) else 0} |")
     L.append("| фильтр | серий | авторов | записей | медиана слов |\n|---|---|---|---|---|\n" + "\n".join(rows) + "\n")
-    for f in lc["forms"]:
+    ok = w[w["linked_ok"]]
+    L.append("Форма серии — по суммарной длине (повесть ≥ {povest}, роман ≥ {novel} слов); рубрика — в `form_rubric`.\n"
+             .format(**cfg["selection"]["long_form_min_words"]))
+    L.append("| форма по длине | is_complete=true | false | unknown |\n|---|---|---|---|")
+    for f, g in ok.groupby("form"):
+        vc = g["is_complete"].value_counts()
+        L.append(f"| {f} | {vc.get('true', 0)} | {vc.get('false', 0)} | {vc.get('unknown', 0)} |")
+    L.append("")
+    for f in ["povest", "novel"]:
         s = w[w["linked_ok"] & (w["form"] == f)]
         L.append(f"- linked_ok, форма {f}: {len(s)} серий, {s['author_id'].nunique()} авторов, медиана {int(s['n_words'].median()) if len(s) else 0} слов, "
                  f"с маркером конца {int(s['has_end'].sum())}.")

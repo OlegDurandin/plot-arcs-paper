@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -34,6 +35,35 @@ CFG: dict = {}
 
 
 # ---------------------------------------------------------------- обработка одного текста
+CONT_RE = re.compile(r"продолжение\s+следует|окончание\s+следует|продолжение\s+(?:будет|читайте|в\s+следующ)|"
+                     r"to\s+be\s+continued|\(продолжение\)", re.I)
+END_RE = re.compile(r"(?:^|\n)\s*\*?\s*(?:конец|the\s+end|конец\s+(?:романа|повести|книги)|закончено\b[^\n]*)\s*\*?\s*[.!]*\s*$",
+                    re.I | re.M)
+FRAGMENT_RE = re.compile(r"(?i)(?<!\w)(?:глава|главы|гл\.|часть|части|ч\.\s*\d|продолжение|окончание|эпизод|серия|"
+                         r"пролог|эпилог|отрывок|фрагмент)(?!\w)")
+
+
+def completeness(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """is_complete ∈ {true, false, unknown} и источник решения — по правилам Ворот 0."""
+    val = pd.Series("unknown", index=df.index)
+    src = pd.Series("", index=df.index)
+    tale = df["corpus"].isin(["afanasyev", "fairytales"])
+    val[tale], src[tale] = "true", "folk_text"
+    fb = df["corpus"] == "ficbook"
+    st = df.get("fb_status")
+    if st is not None:
+        val[fb & (st == "finished")] = "true"
+        val[fb & st.isin(["В процессе", "Заморожен"])] = "false"
+        src[fb] = "fb_status"
+    pz = df["corpus"] == "proza"
+    frag = df["title"].fillna("").map(lambda t: bool(FRAGMENT_RE.search(t)))
+    cont, end = df["tail_continuation"].fillna(False), df["tail_end_marker"].fillna(False)
+    rules = [(pz & cont, "false", "continuation_marker"), (pz & ~cont & end, "true", "end_marker"),
+             (pz & ~cont & ~end & frag, "unknown", "fragment_title"),
+             (pz & ~cont & ~end & ~frag, "true", "single_record")]
+    for m, v, s_ in rules:
+        val[m], src[m] = v, s_
+    return val, src
 def _h32(b: bytes) -> int:
     return xxhash.xxh32_intdigest(b)
 
@@ -53,6 +83,9 @@ def text_stats(item: tuple[int, str]) -> tuple[int, dict, np.ndarray | None]:
         "short_line_share": round(short_share, 4),
         "verse_like": bool(len(lines) >= vv["min_lines"] and short_share >= vv["share"]),
         "sha1_norm": hashlib.sha1(norm.encode()).hexdigest(),
+        # маркеры в последних символах текста: «продолжение следует» / «конец»
+        "tail_continuation": bool(CONT_RE.search(text[-CFG["completeness"]["tail_chars"]:])),
+        "tail_end_marker": bool(END_RE.search(text[-CFG["completeness"]["tail_chars"]:])),
     }
     sig = None
     if len(toks) >= dd["min_words"]:
@@ -293,7 +326,7 @@ def main():
         cfg["sample_frac"] = 1.0
     frac = cfg["sample_frac"]
     # хешируем только разделы, влияющие на манифест (остальные разделы конфига — этапы 0b–0d)
-    chash = config_hash({k: cfg[k] for k in ("seed", "sample_frac", "sources", "dedup", "verse")})
+    chash = config_hash({k: cfg[k] for k in ("seed", "sample_frac", "sources", "dedup", "verse", "completeness")})
     suffix = "" if frac >= 1 else f"_sample{frac:g}"
     out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)
@@ -367,6 +400,7 @@ def main():
     rank = df.assign(_neg=-df["n_words"]).sort_values(["near_dup_cluster", "_neg", "doc_id"]) \
              .groupby("near_dup_cluster").cumcount()
     df["is_near_dup"] = (rank.reindex(df.index) > 0) & (df["near_dup_cluster_size"] > 1)
+    df["is_complete"], df["is_complete_source"] = completeness(df)
     log(f"почти-дублей (кроме представителя кластера): {int(df['is_near_dup'].sum())}")
 
     df.to_parquet(f_man, index=False)

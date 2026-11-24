@@ -348,6 +348,53 @@ def main():
     chb = ch[ch["ch_ok"] & ch["doc_id"].isin(base.loc[base["corpus"] == "ficbook", "doc_id"])]
     P(f"Ficbook, если единица — глава: глав {len(chb)}, из них ≥ 1000 слов — {(chb['n_words'] >= 1000).mean():.2f}.\n")
 
+    # ---------------- 7b. Аналитическая выборка (этап 0d)
+    asf = ROOT / cfg["selection"]["out"]
+    if frac >= 1 and asf.exists():
+        a = pd.read_parquet(asf)
+        inc = a[a["include"]]
+        P("## 7b. Аналитическая выборка по решениям Ворот 0 (`data/interim/analysis_set.parquet`)\n")
+        thr, strict = cfg["selection"]["long_form_min_words"], cfg["selection"]["long_form_strict_min_words"]
+        P(f"Правила: ≥ {cfg['selection']['min_words']} слов, без стихоподобных и дублей; повесть одной записью ≥ {thr['povest']}, "
+          f"роман ≥ {thr['novel']} слов (короче или с «продолжение следует» — глава); форма склеенной серии — по суммарной "
+          "длине теми же порогами; Ficbook — завершённые ориджиналы без пропусков глав.\n")
+        summ = inc.groupby(["unit", "corpus", "form"]).agg(
+            единиц=("doc_id", "size"), авторов=("author_id", "nunique"), медиана_слов=("n_words", "median"),
+            в_лимите_20=("within_author_cap", "sum")).reset_index()
+        summ["медиана_слов"] = summ["медиана_слов"].astype(int)
+        P(md_table(summ) + "\n")
+        P("### Завершённость (`is_complete`)\n")
+        nc = inc[inc["unit"] != "chapter"]
+        ct = pd.crosstab([nc["unit"], nc["corpus"], nc["form"]], nc["is_complete"]).reset_index()
+        P(md_table(ct) + "\n")
+        P("Источник: Ficbook — статус произведения; Проза.ру — «продолжение следует» (false) / «конец», «закончено» (true) "
+          "в последних 400 символах, иначе одиночная запись — true; склеенная серия — маркер конца в заголовках или в хвосте "
+          "последней главы (true), «продолжение следует» в последней главе (false), иначе unknown; сказки — true.\n")
+        P("### Строгие пороги (проверка устойчивости RQ1, RQ2)\n")
+        rows = []
+        for (u, f), g in inc[inc["form"].isin(["povest", "novel"]) & inc["unit"].isin(["text", "linked_work"])].groupby(["unit", "form"]):
+            s = g[g["strict_long_form"]]
+            sc_ = s[s["is_complete"] == "true"]
+            rows.append(dict(единица=u, форма=f, основной_порог=len(g), строгий_порог=len(s), авторов_строгий=s["author_id"].nunique(),
+                             строгий_и_завершённые=len(sc_)))
+        P(md_table(pd.DataFrame(rows)) + "\n")
+        P(f"Строгие пороги: повесть ≥ {strict['povest']}, роман ≥ {strict['novel']} слов.\n")
+        P("### Афанасьев: типы сказок при порогах 600 и 400\n")
+        af_ = a[(a["corpus"] == "afanasyev")]
+        base = af_[(af_["lang_orig"] == "ru") & (af_["n_words"] > 0)]
+        rows = []
+        for t, g in base.groupby("af_type"):
+            rows.append(dict(тип=t, всего_рус=len(g), при_600=int(g["include"].sum()), при_400=int(g["include_sens400"].sum())))
+        tt = pd.DataFrame(rows)
+        tot = dict(тип="итого", всего_рус=int(tt["всего_рус"].sum()), при_600=int(tt["при_600"].sum()), при_400=int(tt["при_400"].sum()))
+        tt = pd.concat([tt, pd.DataFrame([tot])], ignore_index=True)
+        for c_ in ["при_600", "при_400"]:
+            tt[c_ + "_доля"] = (tt[c_] / tot[c_]).round(2)
+        P(md_table(tt) + "\n")
+        P("Типы — по номеру Афанасьева (жанровые разделы издания; разметка в `configs/s00_inventory.yaml`, `afanasyev_types`). "
+          "animal — о животных, magic — волшебные (вкл. богатырские), novella — бытовые/новеллистические, "
+          "anecdote — анекдоты, other — былички, легенды, небылицы, докучные сказки, прибаутки.\n")
+
     # ---------------- 8. Что вне манифеста
     P("## 8. Что не вошло в манифест\n")
     excl = []
