@@ -1,0 +1,54 @@
+# Этап 1 — предобработка и сегментация
+seed: 42
+analysis_set: data/interim/analysis_set.parquet
+# какие единицы обрабатывать: всё, что входит в анализ, + наборы для проверок чувствительности
+select:
+  include: true                 # analysis_set.include
+  extra_flags: [include_sens400]  # плюс эти флаги (Афанасьев, порог 400)
+  units: [text, linked_work, chapter]
+  # главы Ficbook — внутри произведений (границы частей сохраняются), отдельно не обрабатываются
+  skip_ficbook_chapters: true
+
+# выборочный прогон: N единиц на (unit, corpus, form); null = полный корпус
+sample_per_group: 300
+out_dir: data/processed
+shard_docs: 1000                # документов в одном файле предложений
+n_workers: 8
+
+clean:
+  remove_combining_accents: true      # знаки ударения (U+0301 и др.) — у Афанасьева
+  remove_invisible: true              # мягкий перенос, zero-width, LRM/RLM
+  remove_urls: true
+  drop_lines_without_letters: true    # «***», «#», строки из пунктуации/цифр
+  proza:
+    # служебные строки (чужие «подвалы» внутри текстов-сборников и хвост страницы)
+    drop_line_re: '(?i)^\s*(?:©\s*copyright\b.*|свидетельство\s+о\s+публикации\b.*|полемика\s*:.*|рецензии\s*$|другие\s+произведения\s+автора.*)$'
+    notes_header_re: '(?i)^\s*(?:примечани[ея]|сноски)\s*:?\s*$'   # раздел примечаний — до конца текста
+    # берётся ПОСЛЕДНИЙ такой заголовок и только в последних 20 % строк: «Примечание:» встречается и внутри
+    # цитируемых документов (найдено на выборке: срез 36 % текста по заголовку на 69 % длины)
+    notes_cut_min_position: 0.8
+    footnote_mark_re: '\[\d{1,3}\]'
+  ficbook:
+    drop_first_header: true           # первая строка файла главы — заголовок главы (за ней пустая строка)
+    header_max_words: 20
+    notes_header_re: '(?i)^\s*примечани[ея]\s*:?\s*$'
+    notes_start_max_line: 6           # «Примечания:» в первых строках — блок до ближайшей пустой строки
+    drop_line_re: '(?i)^\s*(?:отзывы\s*:?\s*\d*|ваш(?:а)?\s+автор\.?)\s*$'
+  fairytales:
+    drop_brace_notes_re: '\{\s*Примечани[ея][^}]*\}?'
+  notes_cut_min_position: 0.5         # Ficbook: блок «Примечания:» во второй половине главы — до конца
+
+lang_check:
+  # доля букв і/ї/є/ґ/ў на слово: украинские/белорусские тексты на Проза.ру (найдены на выборке);
+  # казахские/украинские имена в русском тексте дают ~0,01
+  non_russian_letters_per_word: 0.05
+  latin_words_share: 0.3          # текст в основном латиницей
+
+morph:
+  proper_grammemes: [Name, Surn, Patr, Geox, Orgn, Trad]   # имена собственные -> POS = PROPN
+
+segment:
+  relative_N: [10, 20, 50]
+  # окна W в словах; W0 = медиана длины base_magic600 после очистки (считается в коде и пишется в meta)
+  absolute_W: [W0, 1000, 3000, 5000]
+  absolute_step: 0.5                  # шаг = W * step
