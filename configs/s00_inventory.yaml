@@ -1,0 +1,50 @@
+# Этап 0 — инвентаризация корпусов
+seed: 42
+
+# Доля выборки для пробного прогона (стабильный хеш по id, 0..1). 1.0 = полный корпус.
+sample_frac: 0.02
+out_dir: data/interim          # манифест: manifest[_sample<frac>].parquet
+report_dir: reports
+n_workers: 8
+chunk_rows: 500                # строк из sqlite за один fetch
+
+sources:
+  fairytales:
+    db: data/raw/fairytalez.sqlite
+  proza:
+    # Код рубрики Проза.ру -> форма
+    topic_to_form: {"02": story, "21": novella, "01": povest, "04": novel}
+    dbs:
+      - data/raw/proza[2018].sqlite
+      - data/raw/proza[2019].sqlite
+      - data/raw/proza[2020-2021].sqlite
+      - data/raw/proza[2022-2023].sqlite
+      - data/raw/proza[2024-2025].sqlite
+      - data/raw/proza[2023,novel].sqlite
+      - data/raw/proza[2023,novella].sqlite
+      - data/raw/proza[2023,povest].sqlite
+      - data/raw/proza[2024,novel].sqlite
+      - data/raw/proza[2024,novella].sqlite
+      - data/raw/proza[2024,povest].sqlite
+      - data/raw/proza[2025,novel].sqlite
+      - data/raw/proza[2025,novella].sqlite
+      - data/raw/proza[2025,povest].sqlite
+  ficbook:
+    # распаковано из data/raw/data_ficbook(24.11).zip (без __MACOSX)
+    base: data/interim/ficbook_raw
+    db: data/interim/ficbook_raw/data_ficbook/ficbook_originals_2026.sqlite
+    old_db: data/interim/ficbook_raw/data_ficbook/ficbook.sqlite   # только метаданные, для сверки
+
+dedup:
+  shingle_words: 5
+  num_perm: 128
+  jaccard_threshold: 0.8
+  lsh_bands: 16                # 16 x 8 строк; кандидаты затем проверяются по оценке Жаккара
+  max_bucket: 200              # бакеты LSH крупнее — пропускаются (шаблонные тексты), число логируется
+  min_words: 20                # тексты короче не участвуют в near-dup
+
+verse:
+  # строка «короткая», если в ней <= short_line_words слов; текст «похож на стихи», если доля таких строк >= share
+  short_line_words: 8
+  min_lines: 8
+  share: 0.7
