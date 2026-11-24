@@ -448,4 +448,4 @@
 причём часть попаданий — начала рассказов («Привет, меня зовут Вика…»). Меньше порога 3 % — правило не ужесточалось,
 этап 1 не пересчитывался.
 
-**Параметры:** `configs/s00_inventory.yaml` (`afanasyev_types`, `selection.stage1_exclusion`); коммит — см. ниже.
+**Параметры:** `configs/s00_inventory.yaml` (`afanasyev_types`, `selection.stage1_exclusion`); коммит `50c5212`.
