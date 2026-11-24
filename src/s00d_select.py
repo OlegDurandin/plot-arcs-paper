@@ -69,6 +69,7 @@ def main():
     if sc["exclude_verse_like"]:
         excl(d["verse_like"], "стихоподобный")
     excl((d["corpus"] == "afanasyev") & ~d["lang_orig"].isin(sc["afanasyev_langs"]), "Афанасьев: не русский")
+    excl((d["corpus"] == "afanasyev") & d["af_type"].isin(sc["afanasyev_exclude_types"]), "Афанасьев: быличка (несказочная проза)")
     excl((d["corpus"] == "fairytales") & ~d["ft_kind"].isin(sc["fairytales_kinds"]), "fairytalez: басня/литературная")
     fbc = sc["ficbook"]
     fb = d["corpus"] == "ficbook"
@@ -104,10 +105,18 @@ def main():
     sens = sc["min_words_sensitivity"]["afanasyev"]
     only_len = (reasons == f"короче {sc['min_words']} слов")
     d["include_sens400"] = (d["corpus"] == "afanasyev") & (d["include"] | (only_len & (d["n_words"] >= sens)))
+    # Ворота 0: основная база — волшебные сказки (порог 600); устойчивость — все типы кроме быличек (600);
+    # чувствительность — волшебные при пороге 400
+    af = d["corpus"] == "afanasyev"
+    magic = d["af_type"].isin(sc["afanasyev_base_types"])
+    d["base_magic600"] = af & d["include"] & magic
+    d["base_all600"] = af & d["include"]
+    d["base_magic400"] = af & d["include_sens400"] & magic
 
     keep_cols = ["doc_id", "unit", "corpus", "form", "author_id", "title", "date", "n_words", "likes", "tags",
                  "lang_orig", "is_translation", "ft_kind", "af_no", "af_type", "fb_chapters_ok", "fb_date_source",
                  "fb_likes_source", "is_complete", "is_complete_source", "strict_long_form", "include_sens400",
+                 "base_magic600", "base_all600", "base_magic400",
                  "text_path", "include", "exclude_reason"]
     texts = d[keep_cols].copy()
 
@@ -169,9 +178,17 @@ def main():
     rng = np.random.default_rng(cfg["seed"])
     out["_r"] = rng.random(len(out))
     out["author_rank"] = (out[out["include"]].sort_values("_r").groupby(["author_id", "form", "unit"]).cumcount())
-    out = out.drop(columns="_r")
+    out = out.rename(columns={"_r": "_r_keep"})
     out["within_author_cap"] = out["include"] & (out["author_rank"] < sc["max_per_author_form"])
-    for col in ["strict_long_form", "include_sens400"]:
+    # набор explicit: не больше explicit_max_per_author единиц на (автор, форма) — случайно, тот же ключ seed
+    ex = out["include"] & (out["is_complete"] == "explicit") & out["unit"].isin(["text", "linked_work"])
+    # повести и романы автора (одиночные и склеенные) — одна группа: «не больше 3 длинных текстов на автора»
+    grp = out["form"].where(~out["form"].isin(["povest", "novel"]), "long")
+    exr = out[ex].assign(_g=grp[ex]).sort_values("_r_keep").groupby(["author_id", "_g"]).cumcount()
+    out["explicit_cap3"] = False
+    out.loc[exr.index, "explicit_cap3"] = exr < sc["explicit_max_per_author"]
+    out = out.drop(columns="_r_keep")
+    for col in ["strict_long_form", "include_sens400", "base_magic600", "base_all600", "base_magic400"]:
         out[col] = out[col].fillna(False).astype(bool)
     out.to_parquet(ROOT / sc["out"], index=False)
 
@@ -180,6 +197,12 @@ def main():
         единиц=("doc_id", "size"), авторов=("author_id", "nunique"), медиана_слов=("n_words", "median"),
         в_лимите_20=("within_author_cap", "sum"))
     print(summ.to_string())
+    a_ = out[out["corpus"] == "afanasyev"]
+    print("\nАфанасьев — база:", {k: int(a_[k].sum()) for k in ["base_magic600", "base_all600", "base_magic400"]})
+    e_ = out[out["is_complete"] == "explicit"]
+    print("explicit (text+linked_work, повесть/роман): всего",
+          int((e_["include"] & e_["form"].isin(["povest", "novel"])).sum()), "в лимите 3:",
+          int((e_["explicit_cap3"] & e_["form"].isin(["povest", "novel"])).sum()))
     print("\nis_complete (include, без глав):")
     print(pd.crosstab([inc.loc[inc.unit != "chapter", "unit"], inc.loc[inc.unit != "chapter", "form"]],
                       inc.loc[inc.unit != "chapter", "is_complete"]).to_string())

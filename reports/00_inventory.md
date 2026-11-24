@@ -226,7 +226,7 @@ Ficbook, если единица — глава: глав 104370, из них �
 | linked_work | proza | novel | 307 | 225 | 42 175 | 307 |
 | linked_work | proza | povest | 150 | 120 | 13 920 | 150 |
 | linked_work | proza | short_series | 230 | 185 | 5 414 | 230 |
-| text | afanasyev | tale | 244 | 167 | 1 094 | 244 |
+| text | afanasyev | tale | 241 | 165 | 1 098 | 241 |
 | text | fairytales | tale | 1 893 | 109 | 1 473 | 1 074 |
 | text | ficbook | fanfic | 14 005 | 8 464 | 2 862 | 13 817 |
 | text | proza | novel | 784 | 498 | 54 938 | 784 |
@@ -241,7 +241,7 @@ Ficbook, если единица — глава: глав 104370, из них �
 | linked_work | proza | novel | 0 | 84 | 17 | 206 |
 | linked_work | proza | povest | 0 | 21 | 7 | 122 |
 | linked_work | proza | short_series | 0 | 26 | 14 | 190 |
-| text | afanasyev | tale | 0 | 244 | 0 | 0 |
+| text | afanasyev | tale | 0 | 241 | 0 | 0 |
 | text | fairytales | tale | 0 | 1 893 | 0 | 0 |
 | text | ficbook | fanfic | 0 | 14 005 | 0 | 0 |
 | text | proza | novel | 688 | 77 | 0 | 19 |
@@ -266,14 +266,17 @@ Ficbook, если единица — глава: глав 104370, из них �
 
 | тип | всего_рус | при_600 | при_400 | при_600_доля | при_400_доля |
 |---|---|---|---|---|---|
-| anecdote | 79 | 12 | 23 | 0.05 | 0.07 |
+| anecdote | 113 | 28 | 45 | 0.12 | 0.14 |
 | animal | 82 | 14 | 30 | 0.06 | 0.09 |
-| magic | 230 | 182 | 211 | 0.75 | 0.66 |
-| novella | 56 | 23 | 40 | 0.09 | 0.12 |
-| other | 71 | 13 | 17 | 0.05 | 0.05 |
-| итого | 518 | 244 | 321 | 1 | 1 |
+| bylichka | 20 | 0 | 0 | 0 | 0 |
+| formula | 32 | 0 | 1 | 0 | 0 |
+| heroic | 7 | 6 | 6 | 0.02 | 0.02 |
+| legend | 4 | 1 | 1 | 0 | 0 |
+| magic | 227 | 179 | 208 | 0.74 | 0.66 |
+| novella | 33 | 13 | 26 | 0.05 | 0.08 |
+| итого | 518 | 241 | 317 | 1 | 1 |
 
-Типы — по номеру Афанасьева (жанровые разделы издания; разметка в `configs/s00_inventory.yaml`, `afanasyev_types`). animal — о животных, magic — волшебные (вкл. богатырские), novella — бытовые/новеллистические, anecdote — анекдоты, other — былички, легенды, небылицы, докучные сказки, прибаутки.
+Типы — по разделам ATU (разметка `afanasyev_types` в конфиге): animal 1–299; magic 300–749; heroic — пересказы былин; legend 750–849; novella 850–1199; anecdote 1200–1999 (вкл. небылицы); formula 2000–2399; bylichka — несказочная проза (исключена). При 600/400 — без быличек. Основная база — magic при 600 (`base_magic600`).
 
 ## 8. Что не вошло в манифест
 
