@@ -73,8 +73,29 @@ def _init(cfg):
 
 
 # ---------------------------------------------------------------- источники
+def iter_afanasyev(cfg, frac):
+    """Афанасьев, «Народные русские сказки» (Викитека): один вариант под номером = один текст."""
+    src = cfg["sources"]["afanasyev"]["parquet"]
+    df = pd.read_parquet(ROOT / src)
+    df = df[df["parsed"]]
+    for r in df.itertuples(index=False):
+        doc_id = f"af:{int(r.af_no)}"
+        if not in_sample(doc_id, frac):
+            continue
+        yield dict(
+            doc_id=doc_id, corpus="afanasyev", form="tale",
+            # собиратель один; единица вывода — сюжет (подстраница Викитеки), а не «автор»
+            author_id=f"af:{r.af_page}", author_name="А. Н. Афанасьев (собиратель)", date=None, title=r.af_page,
+            lang_orig=r.lang, is_translation=False, tags=r.atu or None, likes=None,
+            text_path=f"parquet:{src}#af_no={int(r.af_no)}", n_words_src=None, source_db="wikisource",
+            ft_kind="folk", af_no=int(r.af_no), af_note=r.note, af_lang=r.lang,
+        ), r.text
+    return
+
+
 def iter_fairytales(cfg, frac):
-    db = ROOT / cfg["sources"]["fairytales"]["db"]
+    ft_cfg = cfg["sources"]["fairytales"]
+    db = ROOT / ft_cfg["db"]
     con = sqlite3.connect(f"file:{db}?immutable=1", uri=True)
     regions = {}
     for tid, slug in con.execute("select tale_id, region_slug from tale_regions order by tale_id, region_slug"):
@@ -93,6 +114,8 @@ def iter_fairytales(cfg, frac):
             tags=json.dumps(regions.get(tid, []), ensure_ascii=False), likes=None,
             text_path=f"sqlite:{cfg['sources']['fairytales']['db']}#tales/{tid}",
             n_words_src=nw_src, source_db=Path(db).name,
+            ft_kind=("fable" if author in ft_cfg["fable_authors"] else
+                     "literary" if author in ft_cfg["literary_authors"] else "folk"),
             ft_regions=",".join(regions.get(tid, [])), ft_category=cat, ft_readability=read,
             site_published=pub, url=url,
         )
@@ -126,6 +149,21 @@ def iter_proza(cfg, frac):
         con.close()
 
 
+FB_STATUSES = {"Завершён", "В процессе", "Заморожен"}
+
+
+def likes_from_badges(badges):
+    """Лайки — первое число после статуса в плашках страницы (проверено: совпадает с works.likes
+    у 19 199 из 19 199 произведений, где likes известны; NULL в works.likes соответствует «0» на странице)."""
+    if not badges:
+        return None
+    pos = [k for k, x in enumerate(badges) if x in FB_STATUSES]
+    if not pos:
+        return None
+    nums = [x for x in badges[pos[-1] + 1:] if str(x).isdigit()]
+    return int(nums[0]) if nums else 0
+
+
 def iter_ficbook(cfg, frac, chapter_rows: list):
     fb = cfg["sources"]["ficbook"]
     base = ROOT / fb["base"]
@@ -133,7 +171,7 @@ def iter_ficbook(cfg, frac, chapter_rows: list):
     works = pd.read_sql_query(
         "select w.work_id, w.url, w.title, w.author, w.author_url, w.fandoms_json, w.directions_json, "
         "w.genres_json, w.tags_json, w.rating, w.status, w.chapters_count, w.likes, w.rewards, "
-        "w.comments_count, w.published_at, w.updated_at, w.language, w.coauthors_json "
+        "w.comments_count, w.published_at, w.updated_at, w.language, w.coauthors_json, w.metadata_json "
         "from works w order by w.work_id", con)
     ch = pd.read_sql_query(
         "select work_id, chapter_number, chapter_url, title, published_at, path, n_words, status, error "
@@ -171,6 +209,10 @@ def iter_ficbook(cfg, frac, chapter_rows: list):
                     text_path=str(Path(fb["base"]) / c.path) if isinstance(c.path, str) else None,
                 ))
         w_date = w.published_at if isinstance(w.published_at, str) else None
+        likes, likes_src = (int(w.likes), "work") if pd.notna(w.likes) else \
+            (likes_from_badges(json.loads(w.metadata_json).get("badges")), "badges")
+        if likes is None:
+            likes_src = None
         fandoms = json.loads(w.fandoms_json or "[]")
         tags = json.loads(w.tags_json or "[]")
         yield dict(
@@ -178,7 +220,7 @@ def iter_ficbook(cfg, frac, chapter_rows: list):
             author_id=f"fb:{w.author_url or w.author}", author_name=w.author,
             date=w_date or first_date, title=w.title,
             lang_orig="ru", is_translation=False,
-            tags=json.dumps(tags, ensure_ascii=False), likes=w.likes,
+            tags=json.dumps(tags, ensure_ascii=False), likes=likes,
             text_path=str(Path(fb["base"]) / "data_ficbook/texts" / "*" / "*" / w.work_id),
             n_words_src=None, source_db=Path(fb["db"]).name, url=w.url,
             fb_date_source="work" if w_date else ("first_chapter" if first_date else None),
@@ -186,6 +228,7 @@ def iter_ficbook(cfg, frac, chapter_rows: list):
             fb_directions=w.directions_json, fb_genres=w.genres_json, fb_rating=w.rating,
             fb_status=w.status, fb_chapters_declared=w.chapters_count,
             fb_chapters_ok=n_ok, fb_chapters_missing=n_bad,
+            fb_likes_source=likes_src,
             fb_rewards=w.rewards, fb_comments=w.comments_count, fb_updated=w.updated_at,
             fb_n_coauthors=len(json.loads(w.coauthors_json or "[]")),
             fb_tag_poetry="Стихи" in tags,
@@ -249,7 +292,8 @@ def main():
     if args.full:
         cfg["sample_frac"] = 1.0
     frac = cfg["sample_frac"]
-    chash = config_hash(cfg)
+    # хешируем только разделы, влияющие на манифест (остальные разделы конфига — этапы 0b–0d)
+    chash = config_hash({k: cfg[k] for k in ("seed", "sample_frac", "sources", "dedup", "verse")})
     suffix = "" if frac >= 1 else f"_sample{frac:g}"
     out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)
@@ -267,7 +311,7 @@ def main():
     metas: list[dict] = []
 
     def gen():
-        for it in (iter_fairytales(cfg, frac), iter_proza(cfg, frac), iter_ficbook(cfg, frac, chapter_rows)):
+        for it in (iter_afanasyev(cfg, frac), iter_fairytales(cfg, frac), iter_proza(cfg, frac), iter_ficbook(cfg, frac, chapter_rows)):
             for meta, text in it:
                 metas.append(meta)
                 if len(metas) % 20000 == 0:

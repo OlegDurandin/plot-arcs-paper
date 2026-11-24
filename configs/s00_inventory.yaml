@@ -11,6 +11,15 @@ chunk_rows: 500                # строк из sqlite за один fetch
 sources:
   fairytales:
     db: data/raw/fairytalez.sqlite
+    # Поле author -> тип текста. Всё, что не перечислено, — фольклорный сборник (folk).
+    fable_authors: ["Басни Эзопа", "фонтан"]          # «фонтан» = Лафонтен (машинный перевод)
+    literary_authors: ["Ганс Христиан Андерсен", "Софи Сегюр", "Вильгельм Хауфф", "Оскар Уайльд",
+      "Редьярд Киплинг", "Чарльз Кингсли", "Клемент С. Мур", "Ивана Брлич-Мажуранич", "Мадам Д'Онуа",
+      "Александр Пушкин", "ЭТА Хоффманн", "Франсуа Коппе", "Натаниэль Хоторн", "Вашингтон Ирвинг",
+      "Beatrix Potter", "Карл Сэндберг", "Charles Perrault", "Рэймонд Макдональд Олден", "Баронесса Орчи",
+      "Эдуард Рене Лефевр де Лабуле", "Констанс Армфилд"]
+  afanasyev:
+    parquet: data/interim/afanasyev.parquet         # строится src/s00c_afanasyev.py
   proza:
     # Код рубрики Проза.ру -> форма
     topic_to_form: {"02": story, "21": novella, "01": povest, "04": novel}
@@ -48,3 +57,36 @@ verse:
   short_line_words: 8
   min_lines: 8
   share: 0.7
+
+# Этап 0b — склейка глав Проза.ру в произведения (src/s00b_link_proza.py)
+proza_linking:
+  forms: [novel, povest]          # серии, в которых есть хотя бы одна запись этих рубрик
+  include_forms: [story, novella, novel, povest]   # записи каких рубрик могут входить в серию
+  stem_words: 3                   # основа заголовка — первые k слов после удаления маркеров глав
+  min_stem_chars: 3
+  min_records: 3
+  max_chapter_number: 500         # большие «номера» — это годы, суммы и т.п.
+  order_rank_corr_min: 0.9        # Spearman(номер главы, время публикации) для «согласованного порядка»
+  review_n: 50                    # серий для ручной проверки
+
+# Этап 0c — корпус Афанасьева (src/s00c_afanasyev.py)
+afanasyev:
+  api: https://ru.wikisource.org/w/api.php
+  prefix: "Народные русские сказки (Афанасьев)/"
+  user_agent: research-corpus-builder/0.1
+  raw_dir: data/external/afanasyev        # скачанная вики-разметка (после скачивания — только чтение)
+  batch: 50
+  out: data/interim/afanasyev.parquet
+
+# Этап 0d — аналитическая выборка по решениям Ворот 0 (src/s00d_select.py)
+selection:
+  min_words: 600                 # единый порог для всех форм (Ворота 0)
+  exclude_verse_like: true
+  max_per_author_form: 20        # лимит в выборках: колонка author_rank, отбор author_rank < 20
+  afanasyev_langs: [ru]          # украинские/белорусские варианты — вне базы
+  fairytales_kinds: [folk]       # басни и литературные сказки — вне базы
+  ficbook: {originals_only: true, status: finished, no_missing_chapters: true}
+  # заголовок-фрагмент: запись — часть большего текста (строже, чем диагностический CHAPTER_RE)
+  fragment_title_re: '(?i)(?<!\w)(?:глава|главы|гл\.|часть|части|ч\.\s*\d|продолжение|окончание|эпизод|серия|пролог|эпилог|отрывок|фрагмент)(?!\w)'
+  linked_works: linked_ok        # какие склеенные серии брать: linked_ok или complete_marked
+  out: data/interim/analysis_set.parquet

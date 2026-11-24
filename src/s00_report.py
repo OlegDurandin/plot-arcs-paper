@@ -22,8 +22,8 @@ import pandas as pd  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, load_config  # noqa: E402
 
-FORMS = ["tale", "story", "novella", "povest", "novel", "fanfic"]
-FORM_RU = {"tale": "сказка", "story": "рассказ", "novella": "новелла", "povest": "повесть",
+FORMS = ["tale_ru", "tale", "story", "novella", "povest", "novel", "fanfic"]
+FORM_RU = {"tale_ru": "сказка (Афанасьев)", "tale": "сказка (fairytalez, пер.)", "story": "рассказ", "novella": "новелла", "povest": "повесть",
            "novel": "роман", "fanfic": "фанфик (Ficbook)"}
 PZ = ["story", "novella", "povest", "novel"]
 # слоты 1–4 эталонной палитры (dataviz/references/palette.md), фиксированный порядок
@@ -94,6 +94,7 @@ def main():
     meta = json.loads((inter / f"manifest{suffix}.meta.json").read_text())
     d = pd.read_parquet(inter / f"manifest{suffix}.parquet")
     ch = pd.read_parquet(inter / f"ficbook_chapters{suffix}.parquet")
+    d.loc[d["corpus"] == "afanasyev", "form"] = "tale_ru"
     d["form"] = pd.Categorical(d["form"], FORMS, ordered=True)
     d["is_dup"] = d["is_exact_dup"] | d["is_near_dup"]
     d["empty"] = d["n_words"] == 0
@@ -210,12 +211,31 @@ def main():
     P("«Заголовок как у главы» — заголовок содержит «глава/часть/продолжение/…» или номер. "
       "«В серии» — у того же автора ≥ 3 записей с совпадающей основой заголовка (после удаления номеров и слов-маркеров). "
       "Связи «глава → произведение» в данных нет, поэтому обе оценки эвристические.\n")
+    wf = inter / "proza_works.parquet"
+    if frac >= 1 and wf.exists():
+        w = pd.read_parquet(wf)
+        P("**Склейка глав (этап 0b, `src/s00b_link_proza.py`).** Серия = автор + основа заголовка; "
+          f"серий из ≥ 3 записей: {len(w)}; надёжно сшитых (`linked_ok`: есть начало, номера без пропусков, "
+          f"порядок номеров согласован с датами): {int(w['linked_ok'].sum())} ({w.loc[w['linked_ok'], 'author_id'].nunique()} авторов, "
+          f"медиана {int(w.loc[w['linked_ok'], 'n_words'].median())} слов); из них с маркером конца (эпилог/окончание/…): "
+          f"{int(w['complete_marked'].sum())}. Ручная проверка 50 серий — `reports/00b_proza_linking_review.md`.\n")
     ex = pz[(pz["form"] == "novel")].sample(min(12, (pz["form"] == "novel").sum()), random_state=cfg["seed"])
     P("Случайные заголовки из рубрики «роман»:\n")
     P("\n".join(f"- {t} — {n} сл." for t, n in zip(ex["title"], ex["n_words"])) + "\n")
 
     # ---------------- 4. Сказки
-    P("## 4. Сказки (fairytalez.sqlite)\n")
+    P("## 4. Сказки\n")
+    af = d[d["corpus"] == "afanasyev"]
+    afc = clean[clean["corpus"] == "afanasyev"]
+    P("### 4.1. Афанасьев, «Народные русские сказки» (основная фольклорная база)\n")
+    P(f"- Источник: Викитека, подстраницы «Народные русские сказки (Афанасьев)/…» (общественное достояние); "
+      f"сырьё — `data/external/afanasyev/pages.jsonl`, разбор — `src/s00c_afanasyev.py`.")
+    P(f"- Вариантов под номерами Афанасьева: {len(af)} (№ 1–579, без пропусков и повторов); пустых в Викитеке: {int(af['empty'].sum())}.")
+    P(f"- Язык: {af['lang_orig'].value_counts().to_dict()} (украинские и белорусские варианты в сборнике есть; в базу идут только русские).")
+    P(f"- Длина (чистые русские): {q(afc.loc[afc['lang_orig'] == 'ru', 'n_words'])}; ≥ 600 слов: "
+      f"{int(((afc['lang_orig'] == 'ru') & (afc['n_words'] >= 600) & ~afc['verse_like']).sum())}.")
+    P("- `author_id` = сюжет (подстраница Викитеки): варианты одного сюжета зависимы, кластеризуем по нему.\n")
+    P("### 4.2. fairytalez.sqlite (мировой фольклор в машинном переводе; проверка)\n")
     ft = d[d["corpus"] == "fairytales"]
     ftc = clean[clean["corpus"] == "fairytales"]
     P(f"- Записей: {len(ft)}; у **всех** есть `url_en` — это русская версия англоязычного сайта fairytalez.com. "
@@ -224,7 +244,10 @@ def main():
     P("- Качество перевода по ручному просмотру — машинное, с ошибками: «Кузнечик-гей» (англ. *the gay grasshopper*), "
       "автор «фонтан» (Лафонтен), «избушка-царевич» вместо имени героя.")
     P("- Народ восстанавливается из `tale_regions` (63 региона; у 27 % сказок больше одного региона, напр. nordic + scandinavian + danish).")
-    P(f"- Стихоподобных среди чистых: {ftc['verse_like'].mean():.1%} (басни Лафонтена и пр.).\n")
+    P(f"- Стихоподобных среди чистых: {ftc['verse_like'].mean():.1%} (басни Лафонтена и пр.).")
+    kinds = ftc["ft_kind"].value_counts().to_dict()
+    P(f"- Тип текста (по списку авторов в конфиге): {kinds}. В базу идут только folk; басни (Эзоп, Лафонтен) и "
+      "литературные сказки (Андерсен, Гауф, Уайльд, Перро, Пушкин…) исключаются.\n")
     reg = ftc.assign(r=ftc["ft_regions"].str.split(",")).explode("r")
     top = reg["r"].value_counts().head(15)
     P("Топ-15 регионов (сказка может входить в несколько):\n")
@@ -243,9 +266,11 @@ def main():
     P(f"- Произведений в `ficbook_originals_2026.sqlite`: {len(fb)}; с хотя бы одной загруженной главой: {int((~fb['empty']).sum())}.")
     P(f"- Ориджиналы (фандом ровно «Ориджиналы»): {fb['fb_is_original'].mean():.1%}; остальное — фанфики по фандомам (BTS, Гарри Поттер…).")
     P(f"- Статус: {fb['fb_status'].value_counts(dropna=False).to_dict()}.")
-    P(f"- Нет даты публикации у произведения: {fb['fb_date_source'].ne('work').mean():.1%} "
-      f"(из них дата восстановлена по первой главе: {(fb['fb_date_source'] == 'first_chapter').sum()}).")
-    P(f"- Нет лайков (`likes` NULL): {fb['likes'].isna().mean():.1%}. Лайки нужны для RQ5.")
+    P(f"- Дата публикации: из карточки произведения {(fb['fb_date_source'] == 'work').mean():.1%}, по первой главе "
+      f"{(fb['fb_date_source'] == 'first_chapter').mean():.1%}, нет {fb['fb_date_source'].isna().mean():.1%} (у пустых — без загруженных глав — даты нет).")
+    P(f"- Лайки: из `works.likes` {(fb['fb_likes_source'] == 'work').mean():.1%}, из плашек страницы (`metadata_json.badges`) "
+      f"{(fb['fb_likes_source'] == 'badges').mean():.1%}, нет {fb['likes'].isna().mean():.1%}. Правило «первое число после статуса» "
+      "совпадает с `works.likes` у 19 199 из 19 199 произведений; NULL в `works.likes` — это «0» на странице.")
     P(f"- С пропущенными главами (ошибка загрузки): {(fb['fb_chapters_missing'] > 0).mean():.1%}.")
     P(f"- Тег «Стихи»: {fb['fb_tag_poetry'].mean():.1%}; стихоподобных по эвристике: {fbc['verse_like'].mean():.1%}.")
     yrs = pd.to_datetime(fb["date"], errors="coerce").dt.year.value_counts().sort_index()
