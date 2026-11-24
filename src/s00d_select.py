@@ -8,8 +8,9 @@
 Правила (configs/s00_inventory.yaml, раздел selection):
   * ≥ min_words слов, без стихоподобных, без дублей; Ficbook — ориджиналы, завершённые, без пропущенных глав;
   * повесть/роман одной записью — только от long_form_min_words; короче или с «продолжение следует» -> глава;
-  * форма склеенной серии — по суммарной длине теми же порогами (короче порога повести -> short_series, вне анализа);
-  * is_complete (true/false/unknown) для каждой единицы; strict_long_form — строгие пороги для проверки устойчивости;
+  * форма склеенной серии — по суммарной длине теми же порогами (короче порога повести -> short_series:
+    отдельная группа вне основного сравнения форм; серии с пропусками исключаются);
+  * is_complete (explicit/assumed/false/unknown) для каждой единицы; strict_long_form — строгие пороги для проверки устойчивости;
   * Афанасьев: af_type по номеру; include_sens400 — набор для проверки чувствительности (порог 400).
 
 Запуск:
@@ -85,11 +86,11 @@ def main():
     # запись «романа/повести» из любой серии (в т.ч. не прошедшей linked_ok) — тоже глава
     ch_linked = (pz_long & d["doc_id"].isin(linked_docs)) | d["doc_id"].isin(sel_members)
     ch_title = pz_long & d["fragment_title"]
-    ch_cont = pz_long & d["tail_continuation"].fillna(False)
+    ch_cont = pz_long & (d["tail_continuation"].fillna(False) | d["tail_partial_end"].fillna(False))
     ch_short = pz_long & (d["n_words"] < long_thr)
     excl(ch_linked, "глава: входит в серию (unit=linked_work/chapter)")
     excl(ch_title, "глава: заголовок-фрагмент")
-    excl(ch_cont, "глава: «продолжение следует»")
+    excl(ch_cont, "глава: «продолжение следует» / «конец N-й части»")
     excl(ch_short, "глава: короче порога повести/романа")
     is_chapter = ch_linked | ch_title | ch_cont | ch_short
     excl(pz & ~pz_long & d["fragment_title"], "фрагмент по заголовку")
@@ -120,12 +121,14 @@ def main():
         form_rubric=wsel["form_rubric"].values, author_id=wsel["author_id"].values, title=wsel["stem"].values,
         date=wsel["date"].values, n_words=wsel["n_words"].values, lang_orig="ru", is_translation=False,
         fb_chapters_ok=wsel["n_records"].values, is_complete=wsel["is_complete"].values,
-        is_complete_source=wsel["is_complete_source"].values,
+        is_complete_source=wsel["is_complete_source"].values, has_gaps=wsel["has_gaps"].values,
+        n_site_missing=wsel["n_site_missing"].values,
         strict_long_form=(wsel["n_words"] >= wsel["form"].map(strict)).fillna(False).values,
         include_sens400=False, text_path="members:data/interim/proza_work_members.parquet"))
     lr = pd.Series("", index=lw.index)
     lr[(wsel["verse_share"] > 0.5).values] = "стихоподобный"
-    lr[(lr == "") & (lw["form"] == "short_series")] = "серия короче порога повести"
+    # Ворота 0: короткие серии — отдельная группа (вне основного сравнения форм); с пропусками — исключаются
+    lr[(lr == "") & (lw["form"] == "short_series") & lw["has_gaps"]] = "короткая серия с пропусками"
     lw["exclude_reason"] = lr.values
     lw["include"] = lw["exclude_reason"] == ""
 

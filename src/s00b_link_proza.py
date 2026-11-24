@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -117,7 +118,7 @@ def main():
     cap = lc["max_chapter_number"]
     d = pd.read_parquet(ROOT / cfg["out_dir"] / "manifest.parquet",
                         columns=["doc_id", "corpus", "form", "author_id", "title", "n_words", "pz_published",
-                                 "is_exact_dup", "verse_like", "tail_continuation", "tail_end_marker"])
+                                 "is_exact_dup", "verse_like", "tail_continuation", "tail_end_marker", "tail_partial_end"])
     d = d[(d["corpus"] == "proza") & d["form"].isin(lc["include_forms"]) & ~d["is_exact_dup"]]
     authors = set(d.loc[d["form"].isin(lc["forms"]), "author_id"])
     d = d[d["author_id"].isin(authors)].copy()
@@ -126,6 +127,20 @@ def main():
     d["key"] = d["author_id"] + "|" + d["stem"]
     keys = set(d.loc[d["form"].isin(lc["forms"]), "key"])
     d = d[d["key"].isin(keys)]
+    # записи тех же серий, недоступные на сайте (автор закрыл страницу / удалено / не найдено / не загружено):
+    # их нет в манифесте, но заголовок и автор известны из списков за день -> пропущенные части серии
+    gone = []
+    for rel in cfg["sources"]["proza"]["dbs"]:
+        con = sqlite3.connect(f"file:{ROOT / rel}?immutable=1", uri=True)
+        gone += con.execute("select 'pz:' || author_login, title, coalesce(error, 'не загружено') from stories "
+                            "where status is null or status != 200").fetchall()
+        con.close()
+    gone = pd.DataFrame(gone, columns=["author_id", "title", "error"])
+    gone = gone[gone["author_id"].isin(authors)]
+    gone["key"] = gone["author_id"] + "|" + [stem(t, lc["stem_words"]) for t in gone["title"]]
+    site_missing = gone[gone["key"].isin(keys)].groupby("key").size()
+    print(f"недоступных на сайте записей в сериях-кандидатах: {int(site_missing.sum())} в {len(site_missing)} сериях")
+
     parsed = pd.DataFrame([parse_title(t, cap) for t in d["title"]], index=d.index)
     d = pd.concat([d, parsed], axis=1)
 
@@ -158,10 +173,12 @@ def main():
         lf = g[g["form"].isin(lc["forms"])]
         wid = "pzw:" + key
         last = gg.iloc[-1]
-        if gg["is_end"].any() or last["tail_end_marker"]:
-            complete, csrc = "true", "end_marker"
-        elif last["tail_continuation"]:
+        if last["tail_continuation"]:
             complete, csrc = "false", "continuation_marker"
+        elif last["tail_partial_end"]:
+            complete, csrc = "false", "partial_end_marker"
+        elif gg["is_end"].any() or last["tail_end_marker"]:
+            complete, csrc = "explicit", "end_marker"
         else:
             complete, csrc = "unknown", "no_marker"
         total = int(gg["n_words"].sum())
@@ -179,12 +196,15 @@ def main():
             order_consistent=bool(not np.isnan(corr) and corr >= lc["order_rank_corr_min"]),
             ordered_by="number" if order_by_num else "time",
             verse_share=float(gg["verse_like"].mean()),
+            n_site_missing=int(site_missing.get(key, 0)),
         ))
         for i, r in enumerate(gg.itertuples()):
             members.append(dict(work_id=wid, pos=i, doc_id=r.doc_id, title=r.title, form=r.form,
                                 vol=r.vol, part=r.part, ch=r.ch, published=r.pz_published, n_words=r.n_words))
     w = pd.DataFrame(works)
     m = pd.DataFrame(members)
+    # пропуски: дыры в нумерации или части, недоступные на сайте
+    w["has_gaps"] = ~w["contiguous"] | (w["n_site_missing"] > 0)
     w["linked_ok"] = w["has_start"] & w["contiguous"] & w["order_consistent"]
     w["complete_marked"] = w["linked_ok"] & w["has_end"]
     out = ROOT / cfg["out_dir"]
@@ -207,10 +227,10 @@ def main():
     ok = w[w["linked_ok"]]
     L.append("Форма серии — по суммарной длине (повесть ≥ {povest}, роман ≥ {novel} слов); рубрика — в `form_rubric`.\n"
              .format(**cfg["selection"]["long_form_min_words"]))
-    L.append("| форма по длине | is_complete=true | false | unknown |\n|---|---|---|---|")
+    L.append("| форма по длине | explicit | false | unknown | с пропусками (has_gaps) |\n|---|---|---|---|---|")
     for f, g in ok.groupby("form"):
         vc = g["is_complete"].value_counts()
-        L.append(f"| {f} | {vc.get('true', 0)} | {vc.get('false', 0)} | {vc.get('unknown', 0)} |")
+        L.append(f"| {f} | {vc.get('explicit', 0)} | {vc.get('false', 0)} | {vc.get('unknown', 0)} | {int(g['has_gaps'].sum())} |")
     L.append("")
     for f in ["povest", "novel"]:
         s = w[w["linked_ok"] & (w["form"] == f)]

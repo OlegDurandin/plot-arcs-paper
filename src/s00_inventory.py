@@ -39,30 +39,53 @@ CONT_RE = re.compile(r"продолжение\s+следует|окончани�
                      r"to\s+be\s+continued|\(продолжение\)", re.I)
 END_RE = re.compile(r"(?:^|\n)\s*\*?\s*(?:конец|the\s+end|конец\s+(?:романа|повести|книги)|закончено\b[^\n]*)\s*\*?\s*[.!]*\s*$",
                     re.I | re.M)
+# «Конец первой части / 1-й книги / второй главы…» — конец части, текст не завершён
+PARTIAL_END_RE = re.compile(r"конец\s+(?:[\w-]+\s+){1,2}(?:част[иь]|книг[иа]|глав[ыа]|тома?|сезона|серии|эпизода)\b", re.I)
+# заголовок — первая часть большего текста («Часть 1», «Книга первая», «Глава 1», «Том I»)
+FIRST_PART_RE = re.compile(r"(?<!\w)(?:часть|книга|глава|том|гл\.|ч\.)\s*(?:1|i|первая|первый|1-я|1-й)(?!\w)|"
+                           r"(?<!\w)(?:первая|1-я)\s+(?:часть|книга|глава)(?!\w)", re.I)
 FRAGMENT_RE = re.compile(r"(?i)(?<!\w)(?:глава|главы|гл\.|часть|части|ч\.\s*\d|продолжение|окончание|эпизод|серия|"
                          r"пролог|эпилог|отрывок|фрагмент)(?!\w)")
 
 
 def completeness(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    """is_complete ∈ {true, false, unknown} и источник решения — по правилам Ворот 0."""
+    """is_complete ∈ {explicit, assumed, false, unknown} и источник решения (Ворота 0, п. 2).
+
+    explicit — завершённость подтверждена (сказка из сборника, статус «завершён» на Ficbook, маркер «Конец» в хвосте);
+    assumed  — одна запись Проза.ру без признаков продолжения и без признаков части в заголовке;
+    false    — «продолжение следует», «Конец первой части/книги…», статус «в процессе/заморожен»;
+    unknown  — заголовок-фрагмент или «Часть 1 / Книга первая / Глава 1» в заголовке, нет статуса.
+    """
     val = pd.Series("unknown", index=df.index)
     src = pd.Series("", index=df.index)
     tale = df["corpus"].isin(["afanasyev", "fairytales"])
-    val[tale], src[tale] = "true", "folk_text"
+    val[tale], src[tale] = "explicit", "folk_text"
     fb = df["corpus"] == "ficbook"
     st = df.get("fb_status")
     if st is not None:
-        val[fb & (st == "finished")] = "true"
+        val[fb & (st == "finished")] = "explicit"
         val[fb & st.isin(["В процессе", "Заморожен"])] = "false"
         src[fb] = "fb_status"
     pz = df["corpus"] == "proza"
-    frag = df["title"].fillna("").map(lambda t: bool(FRAGMENT_RE.search(t)))
-    cont, end = df["tail_continuation"].fillna(False), df["tail_end_marker"].fillna(False)
-    rules = [(pz & cont, "false", "continuation_marker"), (pz & ~cont & end, "true", "end_marker"),
-             (pz & ~cont & ~end & frag, "unknown", "fragment_title"),
-             (pz & ~cont & ~end & ~frag, "true", "single_record")]
+    title = df["title"].fillna("")
+    frag = title.map(lambda t: bool(FRAGMENT_RE.search(t)))
+    first = title.map(lambda t: bool(FIRST_PART_RE.search(t)))
+    cont = df["tail_continuation"].fillna(False)
+    part_end = df["tail_partial_end"].fillna(False)
+    end = df["tail_end_marker"].fillna(False) & ~part_end
+    rules = [  # порядок важен: первое сработавшее правило
+        (pz & cont, "false", "continuation_marker"),
+        (pz & part_end, "false", "partial_end_marker"),
+        (pz & end, "explicit", "end_marker"),
+        (pz & first, "unknown", "first_part_title"),
+        (pz & frag, "unknown", "fragment_title"),
+        (pz, "assumed", "single_record"),
+    ]
+    done = pd.Series(False, index=df.index)
     for m, v, s_ in rules:
+        m = m & ~done
         val[m], src[m] = v, s_
+        done |= m
     return val, src
 def _h32(b: bytes) -> int:
     return xxhash.xxh32_intdigest(b)
@@ -86,6 +109,7 @@ def text_stats(item: tuple[int, str]) -> tuple[int, dict, np.ndarray | None]:
         # маркеры в последних символах текста: «продолжение следует» / «конец»
         "tail_continuation": bool(CONT_RE.search(text[-CFG["completeness"]["tail_chars"]:])),
         "tail_end_marker": bool(END_RE.search(text[-CFG["completeness"]["tail_chars"]:])),
+        "tail_partial_end": bool(PARTIAL_END_RE.search(text[-CFG["completeness"]["tail_chars"]:])),
     }
     sig = None
     if len(toks) >= dd["min_words"]:
@@ -194,7 +218,8 @@ def likes_from_badges(badges):
     if not pos:
         return None
     nums = [x for x in badges[pos[-1] + 1:] if str(x).isdigit()]
-    return int(nums[0]) if nums else 0
+    # нет числа после статуса (194 произведения) — лайки неизвестны, а не 0
+    return int(nums[0]) if nums else None
 
 
 def iter_ficbook(cfg, frac, chapter_rows: list):
@@ -326,7 +351,10 @@ def main():
         cfg["sample_frac"] = 1.0
     frac = cfg["sample_frac"]
     # хешируем только разделы, влияющие на манифест (остальные разделы конфига — этапы 0b–0d)
-    chash = config_hash({k: cfg[k] for k in ("seed", "sample_frac", "sources", "dedup", "verse", "completeness")})
+    # + исходный код этапа: изменение логики тоже инвалидирует кэш
+    code = "".join((Path(__file__).parent / f).read_text(encoding="utf-8") for f in ("s00_inventory.py", "common.py"))
+    chash = config_hash({**{k: cfg[k] for k in ("seed", "sample_frac", "sources", "dedup", "verse", "completeness")},
+                         "_code": hashlib.sha1(code.encode()).hexdigest()})
     suffix = "" if frac >= 1 else f"_sample{frac:g}"
     out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)

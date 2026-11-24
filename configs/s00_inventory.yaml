@@ -85,7 +85,9 @@ afanasyev:
 selection:
   min_words: 600                 # единый порог для всех форм (Ворота 0)
   exclude_verse_like: true
-  max_per_author_form: 20        # лимит в выборках: колонка author_rank, отбор author_rank < 20
+  # Лимит в выборках: не больше 20 единиц на (автор, форма, единица). Отбор СЛУЧАЙНЫЙ с seed (верхний уровень),
+  # а не первые 20 по дате: author_rank — ранг по случайному ключу numpy.default_rng(seed); берём author_rank < 20.
+  max_per_author_form: 20
   afanasyev_langs: [ru]          # украинские/белорусские варианты — вне базы
   fairytales_kinds: [folk]       # басни и литературные сказки — вне базы
   ficbook: {originals_only: true, status: finished, no_missing_chapters: true}
