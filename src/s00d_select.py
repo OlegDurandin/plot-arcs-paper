@@ -174,6 +174,25 @@ def main():
     print(f"записей рубрик «рассказ/новелла» из серий, не прошедших linked_ok, оставлены текстами: {len(inc_text & linked_docs)}")
     print(f"проверка пересечения: 0 из {len(members_inc)} глав склеенных серий среди {len(inc_text)} одиночных текстов")
 
+    # Ворота 1: исключения по языку и орфографии (результат этапа 1)
+    ex1 = sc.get("stage1_exclusion")
+    if ex1 and (ROOT / ex1["docs"]).exists():
+        dd = pd.read_parquet(ROOT / ex1["docs"], columns=["doc_id", "non_russian", "n_words_clean", "hard_sign_word_end"])
+        od = pd.read_parquet(ROOT / ex1["orthography_detail"], columns=["doc_id", "yat_w"])
+        dd = dd.merge(od, on="doc_id", how="left")
+        hard = dd["hard_sign_word_end"] / dd["n_words_clean"].clip(lower=1) >= ex1["hard_sign_word_end_share"]
+        yat = dd["yat_w"].fillna(0) >= ex1["prereform_yat_share"]
+        bad_lang = set(dd.loc[dd["non_russian"], "doc_id"])
+        bad_orth = set(dd.loc[~dd["non_russian"] & (hard | yat), "doc_id"])
+        key = out["doc_id"].where(~((out["unit"] == "chapter") & (out["corpus"] == "ficbook")), out["parent"])
+        for bad, why in [(bad_lang, "не русский язык (этап 1)"), (bad_orth, "орфография: ъ/ѣ (этап 1)")]:
+            m = out["include"] & key.isin(bad)
+            out.loc[m, "exclude_reason"] = why
+            out.loc[m, "include"] = False
+            for col in ["include_sens400", "base_magic600", "base_all600", "base_magic400"]:
+                out.loc[key.isin(bad), col] = False
+        print(f"исключено по этапу 1: язык {len(bad_lang)}, орфография {len(bad_orth)} документов этапа 1")
+
     # воспроизводимый ранг внутри (автор, форма, единица) — для лимита max_per_author_form
     rng = np.random.default_rng(cfg["seed"])
     out["_r"] = rng.random(len(out))
