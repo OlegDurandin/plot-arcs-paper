@@ -195,6 +195,27 @@ def main():
                 rows.append(r)
             R.append(V.md_table(pd.DataFrame(rows)) + "\n")
 
+    # различия форм на LLM-дугах: разница с волшебной сказкой (Афанасьев), бутстрэп по авторам внутри каждой формы
+    R.append("### Сказка против прозы на LLM-дугах: разница «форма − Афанасьев» [95 % ДИ, бутстрэп по авторам]\n")
+    R.append("Рассказы, новеллы, фанфики отобраны в диапазоне длины сказок базы (5–95-й перцентиль), поэтому сравнение "
+             "с ними сопоставлено по длине; повести и романы — отрывками ≈ 350 слов, по длине не сопоставимы.\n")
+    rows = []
+    for col, z, nm in [("LLM", False, "концовка, баллы"), ("LLM", True, "концовка, z"), ("LLM", True, "начало, z")]:
+        pt = per_text(col, z)
+        key_ = "beg" if nm.startswith("начало") else "end"
+        base = pt[pt["stratum"] == "afanasyev"]
+        bv, bg = base[key_].to_numpy(), base["author_id"].to_numpy()
+        bb = np.array([bv[t].mean() for t in boot_groups(bg, rng, B)])
+        r = {"метрика": nm, "Афанасьев": f"{bv.mean():+.2f}"}
+        for st in ST[1:]:
+            q = pt[pt["stratum"] == st]
+            v, gg = q[key_].to_numpy(), q["author_id"].to_numpy()
+            qb = np.array([v[t].mean() for t in boot_groups(gg, rng, B)])
+            dd = qb - bb[:len(qb)]
+            r[ST_RU[st]] = f"{v.mean() - bv.mean():+.2f} [{np.percentile(dd, 2.5):+.2f}; {np.percentile(dd, 97.5):+.2f}]"
+        rows.append(r)
+    R.append(V.md_table(pd.DataFrame(rows)) + "\n")
+
     R.append("### Согласие дуг: медиана по текстам ρ Спирмена (LLM, сигнал) по 20 позициям [IQR]\n")
     rows = []
     for col in [c for c in S if c != "LLM"]:
