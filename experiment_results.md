@@ -535,7 +535,7 @@
    - отчёт `reports/02_validation_llm.md` (`src/s02_validate_llm.py`).
 5. *Этап 3:* LDA K = 50 и 100 на полном корпусе, θ для N10 / N20, траектории (245 тыс. текстов), отчёты по темам.
 
-**Параметры:** `configs/s02_llm_api.yaml`, `configs/s02_emotion.yaml`, `configs/s03_topics.yaml`; коммит — см. ниже.
+**Параметры:** `configs/s02_llm_api.yaml`, `configs/s02_emotion.yaml`, `configs/s03_topics.yaml`; коммит `abd0568`.
 Рассуждения моделей отключены (`reasoning: {enabled: false}`); у gemini-3.5-flash и qwen3.8-flash не отключаются — см. «Неожиданное».
 
 **Результаты — надёжность LLM (золото):**
