@@ -1,0 +1,21 @@
+# Этап 2 (Ворота 2, п. 1 и 2.1): ансамбль сигналов тональности и позиционная ошибка сигнала.
+seed: 42
+llm_config: configs/s02_llm_api.yaml
+bootstrap: 1000
+
+ensemble:
+  # Форма текста в признаки НЕ входит: иначе сигнал «выучит» форму и сравнение форм станет смещённым.
+  features: [sent_positive, sent_negative, RSL, LinisCrowd, NRC_полярность, log_words]
+  # знаки монотонности для бустинга (0 — без ограничения)
+  monotone: {sent_positive: 1, sent_negative: -1, RSL: 1, LinisCrowd: 1, NRC_полярность: 1, log_words: 0}
+  ridge_alphas: [0.01, 0.1, 1, 10, 100, 1000]
+  hgb: {max_iter: 300, learning_rate: 0.05, max_leaf_nodes: 15, min_samples_leaf: 40, l2_regularization: 1.0}
+  cv_folds: 5               # GroupKFold по авторам
+  # критерий из решения пользователя: на сказках ρ «заметно выше» 0,37 и на прозе не хуже классификатора
+  tale_rho_ref: 0.37
+  tale_margin: 0.05         # «заметно» = нижняя граница парной разницы > 0 и прирост ≥ 0,05
+  prose_noninferiority: 0.02
+
+position:
+  signals: [Классификатор_тональности, RSL, LinisCrowd, NRC_полярность, ensemble_ridge]
+  edges: 2                  # первые / последние 2 сегмента против середины

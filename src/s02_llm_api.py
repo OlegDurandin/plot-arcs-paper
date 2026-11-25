@@ -7,6 +7,7 @@
 Запуск:
     .venv/bin/python src/s02_llm_api.py configs/s02_llm_api.yaml --key gold   [--model M] [--limit N]
     .venv/bin/python src/s02_llm_api.py configs/s02_llm_api.yaml --key silver [--model M] [--limit N]
+    .venv/bin/python src/s02_llm_api.py configs/s02_llm_arcs.yaml --key arcs   (LLM-дуги, Ворота 2 п. 2.2)
 Выход: data/processed/s02/llm_api/{key}__{model}.csv
 """
 from __future__ import annotations
@@ -84,7 +85,7 @@ def call(env, api, model, text, emotions):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("config")
-    ap.add_argument("--key", choices=["gold", "silver"], required=True)
+    ap.add_argument("--key", choices=["gold", "silver", "arcs"], required=True)
     ap.add_argument("--model", default=None)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--max-tokens", type=int, default=None, help="для моделей, у которых рассуждения не отключаются")
@@ -98,11 +99,11 @@ def main():
     emotions = ecfg["gold"]["emotions"]
     out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)
-    kf = ROOT / ecfg["out_dir"] / "gold_key.parquet" if args.key == "gold" else out / "silver_key.parquet"
+    kf = ROOT / ecfg["out_dir"] / "gold_key.parquet" if args.key == "gold" else out / f"{args.key}_key.parquet"
     key = pd.read_parquet(kf, columns=["uid", "text"])           # только uid и текст
     of = out / f"{args.key}__{model.replace('/', '_')}.csv"
     done = set(pd.read_csv(of)["uid"]) if of.exists() else set()
-    todo = key[~key["uid"].isin(done)]
+    todo = key[~key["uid"].isin(done)].sample(frac=1.0, random_state=cfg["seed"])   # порядок отправки случаен (прогноз по первым N)
     if args.limit:
         todo = todo.head(args.limit)
     spent0 = spent_rub(out)

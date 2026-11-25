@@ -1,0 +1,36 @@
+# Ворота 2, п. 2.2: LLM-дуги тональности (третий сигнал для сказок). Та же инструкция, что для серебра
+# (тональность + эмоция в одном запросе). Отдельная папка — отдельный бюджет.
+seed: 42
+emotion_config: configs/s02_emotion.yaml
+out_dir: data/processed/s02/llm_arcs
+
+api:
+  temperature: 0
+  max_tokens: 60
+  reasoning: {enabled: false}
+  workers: 16
+  timeout_s: 120
+  retries: 4
+
+budget_rub: 520          # решение пользователя (баланс 565 ₽)
+stop_at_rub: 510         # запас на запросы «в полёте»
+
+models:
+  main: deepseek-v4.1-flash
+
+arcs:
+  N: 20
+  units: [text, linked_work]
+  # длина сказок базы: 5–95-й перцентиль n_words — диапазон для рассказов, новелл, фанфиков
+  length_pct: [5, 95]
+  groups:
+    afanasyev:  {corpus: afanasyev, base: base_magic600, n: all, one_per_author: false, excerpt: false}
+    fairytales: {corpus: fairytales, form: tale, n: 300, one_per_author: false, excerpt: false}
+    story:      {corpus: proza, form: story, n: 300, one_per_author: true, excerpt: false, tale_length: true}
+    novella:    {corpus: proza, form: novella, n: 300, one_per_author: true, excerpt: false, tale_length: true}
+    fanfic:     {corpus: ficbook, form: fanfic, n: 300, one_per_author: true, excerpt: false, tale_length: true}
+    povest:     {corpus: proza, form: povest, n: 100, one_per_author: true, excerpt: true}
+    novel:      {corpus: proza, form: novel, n: 100, one_per_author: true, excerpt: true}
+  excerpt_words: 350        # то же правило, что в золоте: связный отрывок целыми предложениями из случайного места
+  # оценка стоимости по факту серебра (deepseek-v4.1-flash): ₽ ≈ a + b · слов фрагмента
+  cost_model: {a: 0.00717, b: 0.0000561}

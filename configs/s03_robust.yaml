@@ -1,0 +1,30 @@
+# Этап 3, Ворота 3 (п. 5): устойчивость метрик траектории — дискурсивные и сказочные темы, энтропия θ, эмбеддинги.
+seed: 42
+topics_config: configs/s03_topics.yaml
+out_dir: data/processed/s03/robust
+N: 20
+K: [50, 100]
+
+subsample:
+  # вся база Афанасьева (base_magic600) + до n_per_form текстов каждой другой формы с траекторией N20
+  n_per_form: 2000
+  forms: [tale_world, story, novella, fanfic, povest, novel]
+
+# «дискурсивные» темы (решение Ворот 3, по K = 50); для K = 100 не заданы — вариант считается только для K = 50
+discourse_topics: {50: [8, 28, 34, 42]}
+# «сказочные» темы — по тому же правилу, что в s03_report.py: доля у Афанасьева или fairytalez > 3× средней по прочим
+tale_topic_ratio: 3.0
+
+size_bins: [0, 20, 40, 80, 160, 400, 1.0e9]   # содержательных лемм в сегменте (медиана по тексту)
+spline_df: 5                                    # B-сплайн по log(размера сегмента) в регрессии метрики на форму
+
+embeddings:
+  model: intfloat/multilingual-e5-small
+  prefix: "query: "            # симметричное сходство — префикс query (карточка модели e5)
+  max_tokens: 512
+  max_chunks_per_segment: 8    # длинные сегменты (романы): ≤ 8 равномерно взятых кусков ≤ 512 токенов, среднее по словам
+  batch_size: 64
+  device: mps
+  distance: cosine             # 1 − cos между L2-нормированными эмбеддингами сегментов
+
+workers: 8
