@@ -892,7 +892,7 @@
    обновлены.
 
 **Параметры:** `configs/s04_nulls.yaml` (archetype_null, selection, fanfic_tags), `configs/s02_llm_arcs.yaml`,
-`configs/s02_ensemble.yaml`; коммит — см. ниже.
+`configs/s02_ensemble.yaml`; коммит `a7da11a`.
 
 **Результаты — п. 2, архетипы на перемешанных дугах** (N20, classifier):
 
