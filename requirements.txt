@@ -20,3 +20,9 @@ xxhash==4.1.0
 scikit-learn==1.9.1
 joblib==1.6.0
 threadpoolctl==3.8.0
+tomotopy==0.14.0
+sentencepiece==0.2.3
+protobuf==7.36.2
+# только Apple Silicon: локальная LLM (этап 2, предварительная разметка)
+mlx==0.32.4; sys_platform == "darwin"
+mlx-lm==0.32.2; sys_platform == "darwin"
