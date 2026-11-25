@@ -42,6 +42,14 @@ def main():
     have = set(seg["doc_id"])
     a = a[a["doc_id"].isin(have)]
 
+    out = ROOT / cfg["out_dir"]
+    kf = out / "gold_key.parquet"
+    if kf.exists():
+        # выборка уже показана разметчику — не пересоздаём, только (до)строим повторы и страницу
+        key = pd.read_parquet(kf)
+        key = key[~key["uid"].isin([f"s{i:03d}" for i in range(401, 1000)])] if "repeat_of" not in key else key[key["repeat_of"].isna()]
+        build_page(cfg, key, rng)
+        return
     n_af = gc["afanasyev_min"]
     rest = gc["n_total"] - n_af
     per = rest // len(gc["forms"])
@@ -98,20 +106,58 @@ def main():
     # случайный порядок и слепые идентификаторы
     key = key.sample(frac=1.0, random_state=cfg["seed"]).reset_index(drop=True)
     key.insert(0, "uid", [f"s{i + 1:03d}" for i in range(len(key))])
-    out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)
-    key.to_parquet(out / "gold_key.parquet", index=False)
-
-    items = [dict(uid=u, text=t) for u, t in zip(key["uid"], key["text"])]
-    page = TEMPLATE.replace("__ITEMS__", json.dumps(items, ensure_ascii=False).replace("</", "<\\/")) \
-                   .replace("__EMOTIONS__", json.dumps(gc["emotions"], ensure_ascii=False)) \
-                   .replace("__N__", str(len(items)))
-    (ROOT / "reports" / "02_gold_annotation.html").write_text(page, encoding="utf-8")
+    key.to_parquet(kf, index=False)
+    build_page(cfg, key, rng)
     summ = key.groupby("stratum").agg(сегментов=("uid", "size"), отрывков=("is_excerpt", "sum"),
                                       слов_показано=("shown_n_words", "sum"), медиана_слов=("shown_n_words", "median"))
     print(summ.to_string())
     print("всего слов к прочтению:", int(key["shown_n_words"].sum()), "| авторов:", key["author_id"].nunique(),
           "| текстов:", key["doc_id"].nunique())
+
+
+def build_page(cfg: dict, key: pd.DataFrame, rng):
+    """Страница разметки: 400 сегментов + повторы для проверки согласованности разметчика с собой.
+
+    Повторы: n_repeats сегментов из первых repeat_source_max позиций; при чистом старте каждый вставляется не раньше,
+    чем через repeat_min_gap позиций после первого показа; если разметка уже начата (в localStorage есть ответы) —
+    повторы идут в конец очереди (оригиналы из первых 250 позиций => разрыв ≥ 150 сохраняется). uid на экран не выводится.
+    """
+    gc = cfg["gold"]
+    out = ROOT / cfg["out_dir"]
+    key = key.sort_values("uid").reset_index(drop=True)
+    base = list(key["uid"])                       # порядок показа = порядок uid (выборка уже перемешана)
+    rr = np.random.default_rng(cfg["seed"] + 1)
+    src_pos = np.sort(rr.choice(min(gc["repeat_source_max"], len(base)), gc["n_repeats"], replace=False))
+    reps = []
+    for j, p in enumerate(src_pos):
+        reps.append(dict(uid=f"s{len(base) + j + 1:03d}", repeat_of=base[p], src_pos=int(p)))
+    # чистый старт: вставки на случайные позиции в [p + gap, конец]
+    fresh = list(base)
+    ins = []
+    for r in reps:
+        lo = r["src_pos"] + gc["repeat_min_gap"]
+        ins.append((int(rr.integers(lo, len(base) + 1)), r["uid"]))
+    for posn, u in sorted(ins, key=lambda x: (-x[0], x[1])):
+        fresh.insert(posn, u)
+    # проверка разрыва в обоих порядках
+    for order in (fresh, base + [r["uid"] for r in reps]):
+        ix = {u: i for i, u in enumerate(order)}
+        assert all(ix[r["uid"]] - ix[r["repeat_of"]] >= gc["repeat_min_gap"] for r in reps), "разрыв < gap"
+    rep = pd.DataFrame(reps)
+    src = key.set_index("uid")
+    rep_rows = src.loc[rep["repeat_of"]].reset_index(drop=True).copy()
+    rep_rows["uid"] = rep["uid"].to_numpy()
+    rep_rows["repeat_of"] = rep["repeat_of"].to_numpy()
+    full = pd.concat([key.assign(repeat_of=None), rep_rows], ignore_index=True)
+    full.to_parquet(out / "gold_key.parquet", index=False)
+    texts = dict(zip(full["uid"], full["text"]))
+    items = {u: texts[u] for u in full["uid"]}
+    page = (TEMPLATE.replace("__ITEMS__", json.dumps(items, ensure_ascii=False).replace("</", "<\\/"))
+            .replace("__FRESH__", json.dumps(fresh)).replace("__APPEND__", json.dumps(base + [r["uid"] for r in reps]))
+            .replace("__EMOTIONS__", json.dumps(gc["emotions"], ensure_ascii=False)))
+    (ROOT / "reports" / "02_gold_annotation.html").write_text(page, encoding="utf-8")
+    print(f"страница: {len(base)} сегментов + {len(reps)} повторов; разрыв ≥ {gc['repeat_min_gap']} в обоих порядках")
 
 
 TEMPLATE = r"""<!doctype html>
@@ -156,12 +202,17 @@ textarea{width:100%;min-height:44px;border:1px solid var(--line);border-radius:8
 Форма и источник текста скрыты намеренно.</p>
 </main>
 <script>
-const ITEMS = __ITEMS__;
+const TEXTS = __ITEMS__;
+const FRESH = __FRESH__, APPEND = __APPEND__;
 const EMO = __EMOTIONS__;
 const TONES = [-2,-1,0,1,2];
 const KEY = "gold_annotation_v1";
 let st; try { st = JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e) { st = {}; }
 st.ans = st.ans || {}; st.i = st.i || 0;
+// порядок очереди: при начатой разметке повторы — в конец (старые индексы позиций сохраняются)
+if (!st.order || st.order.length !== FRESH.length) { st.order = Object.keys(st.ans).length ? APPEND : FRESH; }
+const ITEMS = st.order.map(u => ({uid: u, text: TEXTS[u]}));
+try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e) {}
 const keysT = ["1","2","3","4","5"], keysE = ["q","w","e","r","t","y","u"];
 function save(){ const u = ITEMS[st.i].uid; const a = st.ans[u] || (st.ans[u] = {});
   a.note = document.getElementById("note").value; a.ts = new Date().toISOString();
@@ -171,7 +222,7 @@ function render(){
   const it = ITEMS[st.i], a = st.ans[it.uid] || {};
   document.getElementById("text").textContent = it.text;
   document.getElementById("text").scrollTop = 0;
-  document.getElementById("pos").textContent = `Фрагмент ${st.i+1} из ${ITEMS.length} · ${it.uid}`;
+  document.getElementById("pos").textContent = `Фрагмент ${st.i+1} из ${ITEMS.length}`;
   const tone = document.getElementById("tone"); tone.innerHTML = "";
   TONES.forEach((v,k) => { const b = document.createElement("button"); b.innerHTML = (v>0?"+":"")+v+`<kbd>${keysT[k]}</kbd>`;
     if (a.tone === v) b.className = "on"; b.onclick = () => setTone(v); tone.appendChild(b); });

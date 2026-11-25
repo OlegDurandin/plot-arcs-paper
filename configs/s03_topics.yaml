@@ -1,0 +1,52 @@
+# Этап 3 — тематический канал (Plot Arceology)
+seed: 42
+s01_run: data/processed/s01_1700a4b18d
+analysis_set: data/interim/analysis_set.parquet
+out_dir: data/processed/s03
+models_dir: models
+
+vocab:
+  pos_keep: [NOUN, ADJF, ADJS, VERB, INFN]   # существительные, прилагательные, глаголы (лемма глагола одна для VERB/INFN)
+  drop_propn: true                             # PROPN (имена, фамилии, топонимы по словарю pymorphy3)
+  drop_unknown_lemmas: true                    # леммы вне словаря pymorphy3: выдуманные имена персонажей, опечатки
+  min_lemma_len: 3
+  # частотные «служебные» глаголы и существительные, которые иначе входят во все темы
+  stopwords: [быть, мочь, стать, сказать, говорить, сделать, делать, хотеть, знать, видеть, иметь, давать, дать,
+              взять, идти, пойти, прийти, казаться, начать, начинать, становиться, оказаться, сидеть, стоять, лежать,
+              раз, время, человек, год, день, дело, слово, рука, глаз, голова, жизнь, сторона, место, вид, весь, свой,
+              который, такой, самый, другой, этот, тот, какой, каждый, очень]
+  min_texts: 10                                # лемма должна встретиться не меньше чем в 10 текстах обучающей выборки
+  max_doc_share: 0.3                           # и не больше чем в 30 % обучающих документов
+
+train:
+  chunk_tokens: 200                            # обучающий документ = 200 подряд идущих содержательных лемм текста
+  chunks_per_stratum: 8000                     # поровну на каждую группу
+  max_texts_per_author: 3
+  max_chunks_per_text: 20
+  # группы (strata): сказка = все включённые сказки Афанасьева (≈ 700 кусков) + fairytalez (folk) до нормы
+  strata:
+    tale: [afanasyev, fairytales]
+    story: [story]
+    novella: [novella]
+    povest: [povest]
+    novel: [novel]
+    fanfic: [fanfic]
+  K: [50, 100]
+  iterations: 1000
+  burn_in: 100
+  alpha: 0.1                                   # симметричный prior документ-тема (оптимизируется tomotopy)
+  eta: 0.01
+  optim_interval: 10
+  workers: 8
+  sample_chunks_per_stratum: 800               # выборочный прогон
+  sample_K: [20]
+  sample_iterations: 200
+
+infer:
+  N: [10, 20]
+  units: [text, linked_work]
+  iterations: 100
+  workers: 8
+
+trajectory:
+  distance: hellinger

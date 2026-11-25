@@ -1,0 +1,40 @@
+# Этап 2 — LLM-разметка через provod.ai (OpenAI-совместимый API).
+# Ключ: .env (PROVOD_API_KEY, PROVOD_BASE_URL), в git не попадает.
+# Назначение: (а) вторая разметка золотой выборки — согласие с человеком и между моделями;
+#             (б) «серебряная» выборка — оценка сигналов (лексиконы, классификаторы) против LLM по формам
+#                 на большем числе авторов. Серебро НЕ заменяет человеческое золото (решение по нему — на воротах 2).
+seed: 42
+emotion_config: configs/s02_emotion.yaml   # инструкция, список эмоций, правило отрывков — общие с золотом
+out_dir: data/processed/s02/llm_api
+
+api:
+  temperature: 0
+  max_tokens: 60
+  reasoning: {enabled: false}   # у deepseek-v4.1-flash рассуждения включены по умолчанию — платные и не нужны
+  workers: 8
+  timeout_s: 120
+  retries: 4
+
+# Жёсткий бюджет в рублях по фактической стоимости из usage.cost (provod.ai возвращает RUB).
+budget_rub: 500
+stop_at_rub: 470                # запас на запросы «в полёте»
+
+models:
+  main: deepseek-v4.1-flash
+  compare: [gemini-2.5-flash-lite, gpt-5.4-nano]   # только на золоте
+
+silver:
+  N: 20
+  units: [text, linked_work]
+  # целевое число сегментов по стратам; один текст на автора, если авторов не хватает — до max_seg_per_text
+  # разных сегментов из текста (вывод всё равно по авторам — кластерный бутстрэп)
+  strata:
+    fanfic:     {corpus: ficbook, form: fanfic, n: 2000}
+    story:      {corpus: proza, form: story, n: 2000}
+    novella:    {corpus: proza, form: novella, n: 2000}
+    povest:     {corpus: proza, form: povest, n: 2000}
+    novel:      {corpus: proza, form: novel, n: 2000}
+    afanasyev:  {corpus: afanasyev, base: base_magic600, n: 700, one_per_author: false}   # «автор» = сборник
+    fairytales: {corpus: fairytales, form: tale, n: 700, one_per_author: false}
+  max_seg_per_text: 5
+  exclude_gold_segments: true   # пары (doc_id, seg) из золота не берутся
