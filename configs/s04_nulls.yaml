@@ -1,0 +1,41 @@
+# Этап 4 — нулевые модели, контроль длины, шум дуги (классификатор и RSL; LLM-дуги и эмбеддинги — позже)
+seed: 42
+s01_run: data/processed/s01_1700a4b18d
+analysis_set: data/interim/analysis_set.parquet
+emotion_config: configs/s02_emotion.yaml
+clf_dir: data/processed/s02/clf
+lex_dir: data/processed/s02/lex
+out_dir: data/processed/s04
+
+units: [text, linked_work]
+N: [10, 20]
+signals: [clf, rsl]            # clf = P(pos) − P(neg) классификатора seara; rsl = (pos − neg) / слов, RuSentiLex
+use_author_cap: true           # сравнения форм — на within_author_cap (≤ 20 текстов автора)
+sample_frac: 0.05              # выборочный прогон (crc32 doc_id); полный — без --sample
+
+arc:
+  # сглаживание в ДОЛЯХ текста, одинаково для всех форм (решение Ворот 2)
+  ma_frac: 0.15                # окно скользящего среднего = round(0.15·N), нечётное ≥ 1 (N20 → 3, N10 → 1→3)
+  loess_frac: 0.3              # LOESS (statsmodels lowess) — проверка чувствительности на выборке
+  edge_frac: 0.1               # «концовка» / «начало» = последние / первые 10 % сегментов (N20 → 2, N10 → 1)
+  turn_min_delta: 0.0          # поворот = смена знака приращения сглаженной z-дуги
+
+perm_null:
+  n_perm: 100                  # перестановок сегментов на текст
+  alpha: 0.05
+  chunk_texts: 20000
+
+noise:
+  # бутстрэп предложений внутри сегментов (N = 20) на стратифицированной выборке; классификатор — по предложениям
+  n_boot: 100
+  per_form: {tale_ru: 179, tale_world: 500, story: 1000, novella: 1000, fanfic: 1000, povest: 300, novel: 300, short_series: 230}
+  clf_batch: 256
+  clf_max_tokens: 128          # предложение длиннее — обрезается для пословной оценки шума (только в шумовой модели)
+  device: mps
+  snr_threshold: 2.0           # (б) поправка на надёжность: тексты с SNR выше порога
+
+length:
+  n_bins: 5                    # квантильные интервалы log(n_words) по всем включённым текстам
+  min_per_form_bin: 30
+  matched_pairs: [[tale_ru, story], [tale_ru, novella], [tale_ru, fanfic], [story, novella], [story, fanfic], [povest, novel], [short_series, story]]
+  caliper_log: 0.05            # сопоставление по log(n_words): ближайший сосед без возвращения, |Δ| ≤ 0.05

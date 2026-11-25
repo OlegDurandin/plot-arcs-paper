@@ -141,6 +141,15 @@ def _job(args):
     kind, doc, X = args
     m = traj_metrics(X) if kind == "lda" else emb_metrics(X)
     m.pop("path_length", None)
+    # внутритекстовый разброс: среднее попарное расстояние между сегментами текста (основная нормировка скорости,
+    # решение Ворот 3; Хеллингер для LDA, 1 − cos для эмбеддингов)
+    if kind == "lda":
+        R_ = np.sqrt(np.clip(X, 0, None))
+        D = np.sqrt(np.clip(1.0 - R_ @ R_.T, 0, None))
+    else:
+        D = np.clip(1 - X @ X.T, 0, None)
+    iu = np.triu_indices(len(X), 1)
+    m["pairwise"] = float(D[iu].mean())
     m["doc_id"] = doc
     return m
 
@@ -228,6 +237,8 @@ def cmd_report(cfg, tcfg):
             for c in ["speed", "volume", "circuitousness", "pos_concentration"]:
                 allm[(K, f"{c} · {vn}")] = ms[c]
             allm[(K, f"speed / volume · {vn}")] = ms["speed"] / ms["volume"].replace(0, np.nan)   # объём 0 — вырожденная θ
+            allm[(K, f"speed / попарное · {vn}")] = ms["speed"] / ms["pairwise"].replace(0, np.nan)
+            allm[(K, f"попарное · {vn}")] = ms["pairwise"]
     ef = out / "emb_segments.parquet"
     if ef.exists():
         em = pd.read_parquet(ef).sort_values(["doc_id", "seg"])
@@ -256,6 +267,8 @@ def cmd_report(cfg, tcfg):
                  ", ".join(f"{FORM_RU[f]} {bt[f]:.3f}" for f in order if f in bt) + ".\n")
         allm[("emb", "speed · эмбеддинги, норм. на межтекстовое")] = ms["speed"] / fk_of.reindex(ms.index).map(bt)
         allm[("emb", "speed / volume · эмбеддинги")] = ms["speed"] / ms["volume"].replace(0, np.nan)
+        allm[("emb", "speed / попарное · эмбеддинги")] = ms["speed"] / ms["pairwise"].replace(0, np.nan)
+        allm[("emb", "попарное · эмбеддинги")] = ms["pairwise"]
     M = pd.DataFrame({f"{k[0]}|{k[1]}": v for k, v in allm.items()})
     M = M.join(sub.set_index("doc_id")[["fk", "author_id"]]).join(size.set_index("doc_id"))
     M["ls"] = np.log(M["size"].clip(lower=1))
@@ -303,7 +316,12 @@ def cmd_report(cfg, tcfg):
         rows_ = [("энтропия θ, LDA все темы", f"{K0}|энтропия θ"), ("энтропия θ, LDA без сказочных тем", f"{K0}|энтропия θ · без сказочных"),
                  ("скорость, LDA все темы", f"{K0}|speed · все темы"), ("скорость, LDA без сказочных тем", f"{K0}|speed · без сказочных"),
                  ("скорость, эмбеддинги (сырая)", "emb|speed · эмбеддинги"),
-                 ("скорость, эмбеддинги / межтекстовое расстояние формы", "emb|speed · эмбеддинги, норм. на межтекстовое")]
+                 ("**скорость / внутритекстовое попарное, LDA все темы** (основная)", f"{K0}|speed / попарное · все темы"),
+                 ("**скорость / внутритекстовое попарное, LDA без сказочных тем**", f"{K0}|speed / попарное · без сказочных"),
+                 ("**скорость / внутритекстовое попарное, эмбеддинги** (основная)", "emb|speed / попарное · эмбеддинги"),
+                 ("скорость, эмбеддинги / межтекстовое расстояние формы (проверка)", "emb|speed · эмбеддинги, норм. на межтекстовое"),
+                 ("знаменатель: внутритекстовое попарное, LDA", f"{K0}|попарное · все темы"),
+                 ("знаменатель: внутритекстовое попарное, эмбеддинги", "emb|попарное · эмбеддинги")]
         forms_ = ["tale_ru", "tale_world", "story", "novella", "fanfic"]
         L.append(f"## Итог для Ворот 3 (K = {K0}): медианы внутри диапазонов размера сегмента; последний столбец — отклонение "
                  "Афанасьева от рассказа, %\n")
