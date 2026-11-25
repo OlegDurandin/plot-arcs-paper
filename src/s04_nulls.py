@@ -96,6 +96,16 @@ def smooth_ma(Z, frac):
     return out
 
 
+def smooth_gauss(Z, sigma_frac):
+    """гауссово ядро по позиции в долях текста (центры сегментов (i + 0,5) / N); на краях ядро перенормируется —
+    ширина сглаживания одинакова в долях текста при любом N."""
+    N = Z.shape[-1]
+    x = (np.arange(N) + 0.5) / N
+    K = np.exp(-0.5 * ((x[:, None] - x[None, :]) / sigma_frac) ** 2)
+    K = K / K.sum(1, keepdims=True)
+    return Z @ K.T
+
+
 def zscore(X):
     m = X.mean(-1, keepdims=True)
     s = X.std(-1, keepdims=True)
