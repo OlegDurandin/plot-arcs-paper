@@ -1,0 +1,22 @@
+# Этап 5 — RQ1 на агрегатах: средние дуги форм против перемешанных, различия форм с контролем длины
+seed: 42
+nulls_config: configs/s04_nulls.yaml
+arcs_config: configs/s02_llm_arcs.yaml
+N: [20, 10]
+signals: [clf, rsl]
+bootstrap: 1000              # пуассоновский бутстрэп по авторам
+n_shuffle: 200               # перестановок сегментов внутри текста для нулевой полосы средней дуги
+n_perm: 2000                 # перестановок знака (пары) / меток (LLM-группы) для теста различия дуг
+gauss_sigma_frac: 0.05       # только для рисунков
+pairs:                       # сопоставленные по длине пары (как в этапе 4: |Δ log n_words| ≤ 0,05)
+  - [tale_ru, story]
+  - [tale_ru, novella]
+  - [tale_ru, fanfic]
+  - [tale_world, story]
+  - [tale_ru, tale_world]
+  - [story, novella]
+  - [story, fanfic]
+  - [short_series, story]
+  - [povest, novel]
+caliper_log: 0.05
+llm_groups: [afanasyev, fairytales, story, novella, fanfic, povest, novel]
