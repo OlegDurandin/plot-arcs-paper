@@ -656,7 +656,7 @@
    - ограничения.
 6. Установлен scikit-learn 1.9.1 (+ joblib, threadpoolctl) — в `requirements.txt`.
 
-**Параметры:** `configs/s02_ensemble.yaml`, `configs/s02_llm_arcs.yaml`, `configs/s03_robust.yaml`; коммит — см. ниже.
+**Параметры:** `configs/s02_ensemble.yaml`, `configs/s02_llm_arcs.yaml`, `configs/s03_robust.yaml`; коммит `0397b5a`.
 
 **Результаты — ансамбль** (ρ с LLM [95 % ДИ, бутстрэп по авторам]):
 
