@@ -187,8 +187,10 @@ LLM-дуги (главный сигнал для сравнений со ска�
 .venv/bin/python src/s02_students_batch.py configs/s02_students.yaml             # мощность + партия v2 (Ворота 5)
 ```
 
-Отдаются `reports/02_students_batch1.html` (инструкция) и страницы разметчиков `reports/02_students_batch1_{A,B}.html`.
-`reports/02_students_batch0.html` (`s02_students_batch0.py`) — первая версия, устарела, не отдавать.
+Отдаются `reports/02_students_batch1.html` (инструкция) и страницы разметчиков `reports/02_students_batch1_{A,B}.html`
+(v2: 100 текстов на группу, 2 фрагмента середины). Устаревшие, не отдавать: `reports/02_students_batch1_v1*.html`
+(120/1; `s02_students_batch.py configs/s02_students_batch1_v1.yaml`) и `reports/02_students_batch0.html`
+(30 + 30; `s02_students_batch0.py`).
 
 ## 5. Шаги с LLM (provod.ai)
 

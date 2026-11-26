@@ -16,6 +16,7 @@
 Запуск:  .venv/bin/python src/s02_students_batch.py configs/s02_students.yaml
 Выход:   data/processed/s02/students/batch1_key.parquet (+ batch1_order.parquet, batch1_power.parquet),
          reports/02_students_batch1.html (инструкция), reports/02_students_batch1_{A,B}.html, reports/02_students_power.md
+         (пути — из конфига; configs/s02_students_batch1_v1.yaml воспроизводит устаревшую партию 120/1)
 """
 from __future__ import annotations
 
@@ -110,21 +111,29 @@ def main():
     out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)
     ak = load_pool(cfg)
-    pf, kf, of = out / "batch1_power.parquet", out / cfg["key_file"], out / "batch1_order.parquet"
+    pre = cfg["key_file"].replace("_key.parquet", "")          # batch1_v2 / batch1_v1
+    pf, kf, of = out / f"{pre}_power.parquet", out / cfg["key_file"], out / f"{pre}_order.parquet"
+    fj = out / f"{pre}_power_full.json"
+    n_mid = cfg.get("n_mid", 1)
     # 1. мощность
     if pf.exists():
         pw = pd.read_parquet(pf)
-        full = tuple(json.loads((out / "batch1_power_full.json").read_text()))
+        full = tuple(json.loads(fj.read_text()))
     else:
         pw, full = power(cfg, ak, rng)
         alt, _ = power(cfg, ak, rng, n_mid=cfg["power"]["alt_n_mid"], noise=[0.0, 1.0])
         pw = pd.concat([pw, alt], ignore_index=True)
         pw.to_parquet(pf, index=False)
-        (out / "batch1_power_full.json").write_text(json.dumps(list(map(float, full))))
-    base = pw[(pw["noise_sd"] == 0) & (pw["n_mid"] == 1)]
+        fj.write_text(json.dumps(list(map(float, full))))
+    base = pw[(pw["noise_sd"] == 0) & (pw["n_mid"] == n_mid)]
     good = base[base["power"] >= cfg["power"]["target"]]
-    n = int(good["n"].min()) if len(good) else int(base["n"].max())
-    reached = bool(len(good))
+    if cfg.get("n_fixed"):                                   # n задан решением пользователя
+        n = int(cfg["n_fixed"])
+        reached = bool((base.loc[base["n"] == n, "power"] >= cfg["power"]["target"]).all())
+    else:
+        n = int(good["n"].min()) if len(good) else int(base["n"].max())
+        reached = bool(len(good))
+    pw_n = float(base.loc[base["n"] == n, "power"].iloc[0])
     # 2. ключ
     e = cfg["end_seg"] - 1
     m0, m1 = cfg["middle_segs"][0] - 1, cfg["middle_segs"][1] - 1
@@ -142,8 +151,8 @@ def main():
             for i, d in enumerate(pick):
                 assign[d] = "AB" if i < n_ov else cfg["annotators"][(i - n_ov) % 2]
                 t = ak[ak["doc_id"] == d].set_index("seg")
-                ms = int(rb.integers(m0, m1 + 1))
-                for zone, s in [("конец", e), ("середина", ms)]:
+                ms = sorted(int(v) for v in rb.choice(np.arange(m0, m1 + 1), n_mid, replace=False))
+                for zone, s in [("конец", e)] + [("середина", v) for v in ms]:
                     r = t.loc[s]
                     rows.append(dict(doc_id=d, stratum=g, author_id=r["author_id"], doc_n_words=int(r["doc_n_words"]), zone=zone,
                                      seg=s + 1, n_words=int(r["shown_n_words"]), llm_tone=float(r["tone"]), text=r["text"],
@@ -186,7 +195,10 @@ def main():
                 .replace('const KEY = "gold_annotation_v1";', f'const KEY = "{sk}";')
                 .replace('"gold_annotation_" + new Date()', f'"students_batch1_{a}_" + new Date()')
                 .replace("<title>Золотая разметка — тональность и эмоции</title>", f"<title>Разметка, партия 1 — разметчик {a}</title>")
-                .replace("<b>Разметка тональности и эмоций</b>", f"<b>Партия 1 — разметчик {a}</b>"))
+                .replace("<b>Разметка тональности и эмоций</b>", f"<b>Партия 1 — разметчик {a}</b>")
+                .replace("Форма и источник текста скрыты намеренно.", "Источник текста скрыт намеренно."))
+        chrome = page.replace(json.dumps(items, ensure_ascii=False).replace("</", "<\\/"), "")   # без текстов фрагментов
+        assert "сказк" not in chrome.lower() and "Форма и источник" not in chrome
         assert sk in page and f"students_batch1_{a}_" in page
         (ROOT / cfg["page_annotator"].format(a=a)).write_text(page, encoding="utf-8")
         w = sum(words[u] for u in o)
@@ -194,6 +206,7 @@ def main():
     o = key[key["repeat_of"].isna()]
     emos = ", ".join(ecfg["gold"]["emotions"])
     tmax = max(v["minutes"] for v in per.values())
+    assert "сказк" not in emos.lower()
     links = "".join(f'<li><a href="{Path(cfg["page_annotator"].format(a=a)).name}">Разметчик {a}</a> — {v["items"]} фрагментов, '
                     f'≈ {v["words"]} слов, ≈ {v["minutes"]:.0f} мин</li>' for a, v in per.items())
     idx = f"""<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -214,12 +227,13 @@ main{{max-width:760px;margin:0 auto;padding:24px 20px}}h1{{font-size:22px}}a{{co
 </ol>
 <p>Откуда фрагмент и из какого места текста — скрыто намеренно; не пытайтесь это угадать и не ищите тексты в интернете.
 Не обсуждайте фрагменты с другим разметчиком до сдачи результатов.</p>
-<p>Ответы сохраняются в браузере автоматически, можно прерываться. Работайте в 2–3 приёма по 30–40 минут.
+<p>Ответы сохраняются в браузере автоматически, можно прерываться. Работайте в {int(np.ceil(tmax / 45))}–{int(np.ceil(tmax / 35))} приёмов по 35–45 минут, с перерывами: усталость портит оценки.
 В конце нажмите «Выгрузить CSV» и пришлите файл.</p>
 <h2 style="font-size:18px">Ваша страница</h2><ul>{links}</ul>
-<p><b>Время</b>: около {tmax:.0f} минут на разметчика (из расчёта {tm['words_per_min']} слов в минуту и {tm['sec_per_item']} с на выбор ответа).</p>
+<p><b>Нагрузка</b>: {max(v["items"] for v in per.values())} фрагментов на разметчика. <b>Время</b>: около {tmax:.0f} минут (≈ {tmax / 60:.1f} ч) на разметчика (из расчёта {tm['words_per_min']} слов в минуту и {tm['sec_per_item']} с на выбор ответа).</p>
 <p class="note">Откройте только свою страницу. Если открываете в другом браузере или на другом устройстве — начатая разметка туда не переносится.</p>
 </main></body></html>"""
+    assert "сказк" not in idx.lower() and "форм" not in idx.lower(), "в инструкции не должно быть жанра и форм"
     (ROOT / cfg["page_index"]).write_text(idx, encoding="utf-8")
     # 4. отчёт о мощности и составе
     pv = pw.pivot(index="n", columns=["n_mid", "noise_sd"], values="power")
@@ -227,30 +241,32 @@ main{{max-width:760px;margin:0 auto;padding:24px 20px}}h1{{font-size:22px}}a{{co
                   f"вариант: {nm} середины, " + ("LLM" if sd == 0 else f"шум σ = {sd}") for nm, sd in pv.columns]
     pv = pv.reset_index().rename(columns={"n": "текстов на группу"})
     pv = pv.map(lambda v: f"{v:.3f}" if isinstance(v, float) else v)
-    L = ["# Партия 1 для студентов (v2): мощность и состав\n",
-         "Решение Ворот 5, п. 3 (2026-11-26). Критерий — контраст внутри текста: (последний сегмент − случайный сегмент "
-         f"середины {cfg['middle_segs'][0]}–{cfg['middle_segs'][1]}) у сказок больше, чем у рассказов той же длины; 95 % ДИ "
-         "разницы — бутстрэп по текстам — не включает 0 (знак +, как у LLM).\n",
+    k = cfg["fragments_per_text"] = 1 + n_mid
+    nt = o["doc_id"].nunique()
+    L = [f"# Партия 1 для студентов ({pre}): мощность и состав\n",
+         f"{cfg.get('decision', '')}\n",
+         "Критерий (зафиксирован до разметки): контраст внутри текста — (последний сегмент − среднее сегментов середины "
+         f"{cfg['middle_segs'][0]}–{cfg['middle_segs'][1]}) у сказок больше, чем у рассказов той же длины; 95 % ДИ разницы — "
+         "бутстрэп по текстам — не включает 0 (знак +, как у LLM).\n",
          f"На всей выборке LLM-дуг ({full[1]:.0f} сказок, {full[2]:.0f} рассказов) разница контрастов в сырых баллах: "
          f"{full[0]:+.2f}.\n",
          f"### Доля симуляций, в которых критерий выполняется ({cfg['power']['n_sim']} симуляций, бутстрэп {cfg['power']['n_boot']})\n",
          md(pv) + "\n",
-         "Сетка n: 40–100 — по решению Ворот 5; 120 и 140 добавлены, так как при 100 цель 90 % не достигнута. "
          f"Сказок базы в выборке LLM-дуг — {full[1]:.0f}, это верхняя граница n.\n",
-         f"Выбрано n = {n} текстов на группу" + ("" if reached else " — ЦЕЛЬ 90 % НЕ ДОСТИГНУТА ни при одном n из сетки") +
-         f" (наименьшее n с мощностью ≥ {cfg['power']['target']:.0%} на LLM-оценках). Колонки с шумом — проверка "
-         "чувствительности: человек шумнее LLM; при σ = 1 мощность ниже — это надо учитывать при чтении результата.\n",
+         f"**Партия: n = {n} текстов на группу, {n_mid} фрагмент(а) середины на текст; мощность на LLM-оценках {pw_n:.3f}**"
+         + ("" if reached else " — ЦЕЛЬ 90 % НЕ ДОСТИГНУТА") + ". Колонки с шумом — проверка чувствительности: человек "
+         "шумнее LLM.\n",
          "### Состав\n",
          md(o.groupby(["stratum", "zone"]).agg(фрагментов=("uid", "size"), слов_медиана=("n_words", "median"),
                                                LLM_среднее=("llm_tone", "mean")).round(2).reset_index()) + "\n",
          md(pd.DataFrame([dict(разметчик=a, **{"фрагментов (с повторами)": v["items"], "слов": v["words"],
                                                "минут (оценка)": round(v["minutes"])}) for a, v in per.items()])) + "\n",
-         f"Текстов, которые размечают оба: {int((o['annotators'] == 'AB').sum() / 2)} из {int(len(o) / 2)} "
+         f"Текстов, которые размечают оба: {o.loc[o['annotators'] == 'AB', 'doc_id'].nunique()} из {nt} "
          f"({cfg['overlap_frac']:.0%}); скрытых повторов — {cfg['n_repeats']} на разметчика (разрыв ≥ {cfg['repeat_min_gap']}); "
-         f"фрагменты одного текста — у одного разметчика, не ближе {cfg['pair_min_gap']} позиций.\n",
-         "Страницы: `reports/02_students_batch1.html` (инструкция), `reports/02_students_batch1_A.html`, "
-         "`reports/02_students_batch1_B.html`. Старая версия — `reports/02_students_batch0.html` (не отдавать).\n"]
-    (ROOT / "reports" / "02_students_power.md").write_text("\n".join(L), encoding="utf-8")
+         f"все {k} фрагмента одного текста — у одного разметчика, не ближе {cfg['pair_min_gap']} позиций друг к другу.\n",
+         f"Страницы: `{cfg['page_index']}` (инструкция), `{cfg['page_annotator'].format(a='A')}`, "
+         f"`{cfg['page_annotator'].format(a='B')}`.\n"]
+    (ROOT / cfg["power_report"]).write_text("\n".join(L), encoding="utf-8")
     print("\n".join(L))
 
 
