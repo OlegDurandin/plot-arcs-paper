@@ -172,6 +172,7 @@ LLM-дуги (главный сигнал для сравнений со ска�
 .venv/bin/python src/s02_llm_api.py configs/s05_ending.yaml --key sent --limit 50  # пробный прогон
 .venv/bin/python src/s02_llm_api.py configs/s05_ending.yaml --key sent             # остальное (стоп 95 ₽)
 .venv/bin/python src/s05_ending.py configs/s05_ending.yaml --step analyze          # 2.3–2.4: reports/05_ending.md
+.venv/bin/python src/s05_ending_lex.py configs/s05_ending.yaml                   # правка v3, п. 4: классификатор и RSL на предложениях концовок
 ```
 
 ### Этап 6. RQ2 — расстояние до волшебной сказки
@@ -237,6 +238,7 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/02_students_batch1*.html`, `02_students_power.md` | `s02_students_batch.py` |
 | `reports/05_mean_arcs.md` | `s05_mean_arcs.py` |
 | `reports/05_ending.md` | `s05_ending.py` (шаги contrast → sample → разметка → analyze) |
+| `reports/05_ending_lex.md` | `s05_ending_lex.py` (после разметки по предложениям; без LLM) |
 | `reports/06_distance.md`, `06_distance_secondary[_sample].md` | `s06_distance.py` |
 | `reports/03_embeddings_full[_sample].md` | `s03_embed_report.py` |
 | `reports/10_article_tables_figures.md` | вручную (черновик этапа 10) |
