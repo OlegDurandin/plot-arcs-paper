@@ -139,7 +139,9 @@ LLM-дуги (главный сигнал для сравнений со ска�
 .venv/bin/python src/s03_robust.py configs/s03_robust.yaml embed            # эмбеддинги подвыборки
 .venv/bin/python src/s03_robust.py configs/s03_robust.yaml report           # reports/03_robustness.md
 .venv/bin/python src/s03_embed.py  configs/s03_robust.yaml --scope sample   # оценка времени на 2 % текстов
-.venv/bin/python src/s03_embed.py  configs/s03_robust.yaml --scope full     # весь корпус N20 (≈ 6 ч), продолжает с места
+.venv/bin/python src/s03_embed.py  configs/s03_robust.yaml --scope full     # весь корпус N20 (фактически ≈ 19 ч), продолжает с места
+.venv/bin/python src/s03_embed_report.py configs/s03_robust.yaml --sample   # таблицы по ≈ 10 шардам
+.venv/bin/python src/s03_embed_report.py configs/s03_robust.yaml            # reports/03_embeddings_full.md
 ```
 
 **Недетерминизм LDA.** Обучение идёт в 8 потоков (`train.workers: 8`); tomotopy предупреждает, что при `workers ≠ 1`
@@ -236,5 +238,7 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/05_mean_arcs.md` | `s05_mean_arcs.py` |
 | `reports/05_ending.md` | `s05_ending.py` (шаги contrast → sample → разметка → analyze) |
 | `reports/06_distance.md`, `06_distance_secondary[_sample].md` | `s06_distance.py` |
+| `reports/03_embeddings_full[_sample].md` | `s03_embed_report.py` |
+| `reports/10_article_tables_figures.md` | вручную (черновик этапа 10) |
 
 Рисунки — в `reports/figures/`, их имена начинаются с номера этапа.

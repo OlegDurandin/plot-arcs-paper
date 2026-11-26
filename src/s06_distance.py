@@ -272,11 +272,68 @@ def primary(cfg):
     fig.savefig(fp, dpi=120)
     plt.close(fig)
     L.append(f"![расстояние до базы](figures/{fp.name})\n")
+    L += residual(cfg, docs, T, S, rng)
     S.to_parquet(out / "distance_llm.parquet", index=False)
     PT.to_parquet(out / "distance_llm_texts.parquet", index=False)
     TR.to_parquet(out / "distance_llm_length.parquet", index=False)
     (ROOT / "reports" / "06_distance.md").write_text("\n".join(L), encoding="utf-8")
     print("\n".join(L))
+
+
+def residual(cfg, docs, T, S, rng):
+    """Решение Ворот 5/6, п. 3: чем объясняется остаточное расстояние без позиции 20 (z по позициям 1–19).
+    (а) доля D² на позициях 1–2 (тёмное начало сказки) с поправкой на шум; (б) D только по позициям 3–19 и его
+    перестановочный p; (в) TOST эквивалентности: порог δ = половина D рассказа в том же варианте (задан до расчёта),
+    эквивалентность — если верхняя односторонняя 95 % граница D (с поправкой на смещение) < δ."""
+    B, P, w = cfg["bootstrap"], cfg["n_perm"], cfg["dtw_window"]
+    L = ["## Остаток без позиции 20: начало сказки? (Ворота 5/6, п. 3)\n",
+         "z по позициям 1–19 (вариант «без позиции 20»). (а) Доля D² на позициях 1–2 — с поправкой на шум по позициям "
+         "(квадрат разницы минус её бутстрэп-дисперсия); при равномерном вкладе было бы 2/19 = 0,11. (б) D по позициям 3–19 "
+         "(без начала и без конца) и p перестановки меток. (в) TOST: порог эквивалентности δ = ½ · D рассказа "
+         "(вариант «без позиции 20», с поправкой), задан до расчёта; эквивалентность — если верхняя односторонняя 95 % "
+         "граница D группы < δ.\n"]
+    Z = zscore(T[:, :19])
+    ok = ~np.isnan(Z).any(1)
+    d, Zv = docs[ok].reset_index(drop=True), Z[ok]
+    au = d["author_id"].astype(str).to_numpy()
+    mb = (d["stratum"] == cfg["base_group"]).to_numpy()
+    bs_b, base = boot_means(Zv[mb], au[mb], rng, B)
+    delta = 0.5 * float(S[(S["variant"] == "wo20") & (S["group"] == "story")]["D"].iloc[0])
+    rows = []
+    for g in cfg["groups"]:
+        m_ = (d["stratum"] == g).to_numpy()
+        bs_g, mg = boot_means(Zv[m_], au[m_], rng, B)
+        diff = mg - base
+        vb = np.var(bs_g, 0) + np.var(bs_b, 0)
+        c2 = np.clip(diff ** 2 - vb, 0, None)
+        sh = c2[:2].sum() / c2.sum() if c2.sum() > 0 else np.nan
+        # бутстрэп доли (каждая копия — с той же поправкой)
+        shb = []
+        for k in range(B):
+            dk = bs_g[k] - bs_b[k]
+            ck = np.clip(dk ** 2 - vb, 0, None)
+            shb.append(ck[:2].sum() / ck.sum() if ck.sum() > 0 else np.nan)
+        shb = np.array(shb)
+        # D по позициям 3–19 и перестановочный p
+        D3 = np.sqrt((diff[2:] ** 2).sum())
+        pool = np.vstack([Zv[mb], Zv[m_]])
+        nb = int(mb.sum())
+        D0 = np.empty(P)
+        for r in range(P):
+            ii = rng.permutation(len(pool))
+            D0[r] = np.sqrt(((pool[ii[nb:]].mean(0) - pool[ii[:nb]].mean(0))[2:] ** 2).sum())
+        Db3 = np.sqrt((((bs_g - bs_b)[:, 2:]) ** 2).sum(1))
+        D3c, D3lo, D3hi = corr(D3, Db3)
+        # TOST: верхняя односторонняя 95 % граница D (вариант «без позиции 20», все 19 позиций)
+        D = np.sqrt((diff ** 2).sum())
+        Db = np.sqrt(((bs_g - bs_b) ** 2).sum(1))
+        up = float(np.sqrt(max(0.0, 2 * D ** 2 - np.percentile(Db ** 2, 5))))
+        rows.append({"группа": LLM_RU[g], "доля D² на позициях 1–2": f"{sh:.2f} [{np.nanpercentile(shb, 2.5):.2f}; {np.nanpercentile(shb, 97.5):.2f}]",
+                     "D по позициям 3–19 (с поправкой)": fmt(D3c, D3lo, D3hi), "p, 3–19": f"{(np.sum(D0 >= D3) + 1) / (P + 1):.4f}",
+                     "D без позиции 20: верхняя 95 % граница": f"{up:.3f}",
+                     f"эквивалентность (δ = {delta:.3f})": "да" if up < delta else "не показана"})
+    L.append(md(pd.DataFrame(rows)) + "\n")
+    return L
 
 
 # ---------------------------------------------------------------- вторичный анализ: классификатор, полный корпус
