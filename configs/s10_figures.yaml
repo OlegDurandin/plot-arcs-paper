@@ -8,6 +8,7 @@ dpi: 300
 colors:                      # проверенная пара соседних категориальных слотов (dataviz, палитра по умолчанию)
   llm: "#2a78d6"
   clf: "#eb6834"
+  rsl: "#1baf7a"            # третий категориальный слот (aqua) — только на Рис. 3
   shuffled: "#9a9994"      # ключ не «null»: YAML читает его как None
   ink2: "#52514e"
 fig1:
@@ -21,3 +22,6 @@ fig2:
   groups: [afanasyev, fairytales, story, fanfic]
   bootstrap: 1000
   n_shuffle: 200
+fig3:
+  source: reports/02_position_error_by_form.csv
+  groups: [волшебная сказка (Афанасьев), сказка (fairytalez), рассказ, фанфик]

@@ -241,6 +241,7 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/03_embeddings_full[_sample].md` | `s03_embed_report.py` |
 | `reports/10_article_tables_figures.md` | вручную (черновик этапа 10) |
 | `reports/10_figures.md`, `figures/10_fig*.{png,pdf}` | `s10_figures.py configs/s10_figures.yaml` |
+| `reports/paper/ru/paper_ru.md`, `tables_ru.tex` | вручную (текст); счёт знаков — `s10_count.py reports/paper/ru/paper_ru.md` |
 
 ## 7. Анонимная копия для рецензирования
 
