@@ -1307,7 +1307,7 @@ D с поправкой на шум [95 % ДИ]; p — перестановка 
    - Нужно построить: Р2 (схема конвейера) и Р8 (нормированная скорость против размера сегмента) — без новых расчётов.
 
 **Параметры:** `configs/s02_students.yaml`, `configs/s02_students_batch1_v1.yaml`, `configs/s06_distance.yaml`,
-`configs/s03_robust.yaml` (`embeddings_full_report`); коммиты ddf1114 (партия) и следующий.
+`configs/s03_robust.yaml` (`embeddings_full_report`); коммиты ddf1114 (партия) и 88a9ff8.
 
 **Результаты:**
 
