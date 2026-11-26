@@ -240,6 +240,7 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/06_distance.md`, `06_distance_secondary[_sample].md` | `s06_distance.py` |
 | `reports/03_embeddings_full[_sample].md` | `s03_embed_report.py` |
 | `reports/10_article_tables_figures.md` | вручную (черновик этапа 10) |
+| `reports/10_figures.md`, `figures/10_fig*.{png,pdf}` | `s10_figures.py configs/s10_figures.yaml` |
 
 ## 7. Анонимная копия для рецензирования
 

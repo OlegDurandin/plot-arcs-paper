@@ -1,0 +1,23 @@
+# Этап 10: рисунки основного текста (состав утверждён на Воротах 6, 2026-11-26; язык — сначала русский)
+seed: 42
+nulls_config: configs/s04_nulls.yaml
+arcs_config: configs/s02_llm_arcs.yaml
+out_prefix: reports/figures/10_
+formats: [png, pdf]          # «Диалог»: рисунки отдельными файлами (PDF, EPS, PNG, TIF)
+dpi: 300
+colors:                      # проверенная пара соседних категориальных слотов (dataviz, палитра по умолчанию)
+  llm: "#2a78d6"
+  clf: "#eb6834"
+  shuffled: "#9a9994"      # ключ не «null»: YAML читает его как None
+  ink2: "#52514e"
+fig1:
+  N: 20
+  signal: clf
+  svd_modes: 3
+  n_shuffle_reps: 5
+  smoothing: [ma, none]      # главный контраст: скользящее среднее (как у Reagan et al.) против отсутствия сглаживания
+  alt_ward_k: 6              # запасной вариант: центроиды Уорда при k = 6 (как у Reagan et al.)
+fig2:
+  groups: [afanasyev, fairytales, story, fanfic]
+  bootstrap: 1000
+  n_shuffle: 200
