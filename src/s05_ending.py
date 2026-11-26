@@ -354,10 +354,22 @@ def step_analyze(cfg):
             r["all"] = g["tone"].mean()
             r["last3_wo"] = (list(den) + pre)[-3:] and np.mean((list(den) + pre)[-3:])
             r["last3"] = g["tone"].iloc[-3:].mean()
+            r["last1_wo"] = (list(den) + pre)[-1] if len(den) + len(pre) else np.nan
+            r["last1"] = g["tone"].iloc[-1]
+            # только последний сегмент (позиция 20): предложения без формулы + части смешанных до формулы
+            g20 = g[g["seg"] == g["seg"].max()]
+            b20 = g20[f"in_block_{lvl}"]
+            pre20 = [pref.get((d, si)) for si in g20.loc[b20, "sent_idx"] if (d, si) in pref.index]
+            v20 = list(g20.loc[~b20, "tone"]) + pre20
+            r["seg20_wo"] = np.mean(v20) if v20 else np.nan
+            r["seg20"] = g20["tone"].mean()
             res.append(r)
     R_ = pd.DataFrame(res)
     st = sent[(sent["group"] == "story") & ~sent["is_editorial"]]
-    so = st.groupby("doc_id").agg(all=("tone", "mean"), last3=("tone", lambda v: v.iloc[-3:].mean())).reset_index()
+    so = st.groupby("doc_id").agg(all=("tone", "mean"), last3=("tone", lambda v: v.iloc[-3:].mean()),
+                                  last1=("tone", lambda v: v.iloc[-1])).reset_index()
+    so = so.merge(st[st["seg"] == st.groupby("doc_id")["seg"].transform("max")].groupby("doc_id")["tone"].mean()
+                  .rename("seg20").reset_index(), on="doc_id")
     au_of = lambda ids: dl.loc[ids, "author_id"].astype(str).to_numpy()  # noqa: E731
     L.append("### Тональность частей концовки (сырые оценки −2…+2, среднее по текстам; ДИ — бутстрэп по авторам)\n")
     rows = []
@@ -385,8 +397,12 @@ def step_analyze(cfg):
     for lab, col_t, col_s in [("все предложения последних 2 сегментов (с формулой)", "all", "all"),
                               ("последние 3 предложения (с формулой)", "last3", "last3"),
                               ("без формулы: развязка + части до формулы", "denouement_plus", "all"),
-                              ("без формулы: последние 3 предложения", "last3_wo", "last3")]:
-        for lvl in (["strict", "ext"] if "без" in lab else ["strict"]):
+                              ("без формулы: последние 3 предложения", "last3_wo", "last3"),
+                              ("последнее предложение (с формулой)", "last1", "last1"),
+                              ("без формулы: последнее предложение развязки", "last1_wo", "last1"),
+                              ("только сегмент 20, все предложения (с формулой)", "seg20", "seg20"),
+                              ("без формулы: только сегмент 20", "seg20_wo", "seg20")]:
+        for lvl in (["strict", "ext"] if lab.startswith("без") else ["strict"]):
             r = R_[R_["level"] == lvl].set_index("doc_id")
             vt = r[col_t].astype(float).dropna()
             ta = au_of(vt.index)
@@ -394,7 +410,7 @@ def step_analyze(cfg):
             rel_t = (vt - seg_mid_raw.reindex(vt.index)).dropna()
             rel_s = (sv[col_s] - seg_mid_raw.reindex(sv.index)).dropna()
             rel = diff_ci(rel_t.to_numpy(), au_of(rel_t.index), rel_s.to_numpy(), au_of(rel_s.index), rng, B)
-            rows.append({"мера концовки": lab, "список формул": "—" if "без" not in lab else lvl,
+            rows.append({"мера концовки": lab, "список формул": lvl if lab.startswith("без") else "—",
                          "сказка": f"{vt.mean():+.2f}", "рассказ": f"{sv[col_s].mean():+.2f}",
                          "сказка − рассказ, сырые": fmt(*raw),
                          "(конец − середина): сказка": f"{rel_t.mean():+.2f}", "(конец − середина): рассказ": f"{rel_s.mean():+.2f}",
@@ -434,8 +450,8 @@ def step_analyze(cfg):
         tl = docs.loc[docs["stratum"] == "afanasyev", "doc_id"]
         Zt = pd.DataFrame(zscore(T2.loc[tl].to_numpy()), index=tl)
         Zs = pd.DataFrame(zscore(T2.loc[stz].to_numpy()), index=stz)
-        ct = (Zt[19] - Zt[mid].mean(1)).dropna()
-        cs = (Zs[19] - Zs[mid].mean(1)).dropna()
+        ct = (Zt[19] - Zt[mid].mean(axis=1)).dropna()
+        cs = (Zs[19] - Zs[mid].mean(axis=1)).dropna()
         dif = diff_ci(ct.to_numpy(), au_of(ct.index), cs.to_numpy(), au_of(cs.index), rng, B)
         rows.append({"список": lvl, "переоценено сегментов": len(ids),
                      "сырой балл сегмента 20: с формулой → без": f"{old.mean():+.2f} → {rr.loc[ids].mean():+.2f}",
