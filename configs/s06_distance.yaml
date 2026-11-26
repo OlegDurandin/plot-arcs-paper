@@ -1,0 +1,23 @@
+# Этап 6 — RQ2: расстояние до волшебной сказки (по решениям Ворот 5, 2026-11-26)
+seed: 42
+arcs_config: configs/s02_llm_arcs.yaml
+nulls_config: configs/s04_nulls.yaml
+out_dir: data/processed/s06
+base_group: afanasyev                  # база — средняя LLM-дуга сказок базы (base_magic600)
+groups: [fairytales, story, novella, fanfic, povest, novel]   # LLM-дуги прозы (+ fairytalez для сравнения)
+short_forms: [story, novella, fanfic]  # той же длины, что сказки базы: длина — непрерывная ковариата
+variants:                              # расстояние в трёх вариантах (решение Ворот 5)
+  all20:   {positions: [1, 20], dtw: false}
+  wo20:    {positions: [1, 19], dtw: false}   # без позиции 20: z пересчитывается по 19 позициям
+  dtw1_19: {positions: [1, 19], dtw: true}
+dtw_window: 2                          # полоса Сакоэ — Чибы, позиций (≈ 10 % длины дуги)
+bootstrap: 1000                        # пуассоновский бутстрэп по авторам (база и группа — независимо)
+n_perm: 2000                           # перестановка меток «база / группа» для D
+n_shuffle: 200                         # перемешанные дуги группы: D, которого ждать без структуры
+length_bins: 3                         # терцили длины внутри коротких форм — для рисунка
+# вторичный анализ: классификатор, полный корпус (база — классификаторная средняя дуга той же базы)
+secondary:
+  signal: clf
+  N: 20
+  length_bins: 8                       # квантили log(n_words) по всему корпусу
+  sample_frac: 0.1                     # --sample: доля текстов для выборочного прогона

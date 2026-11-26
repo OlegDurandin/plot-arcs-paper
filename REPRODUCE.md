@@ -172,6 +172,14 @@ LLM-дуги (главный сигнал для сравнений со ска�
 .venv/bin/python src/s05_ending.py configs/s05_ending.yaml --step analyze          # 2.3–2.4: reports/05_ending.md
 ```
 
+### Этап 6. RQ2 — расстояние до волшебной сказки
+
+```bash
+.venv/bin/python src/s06_distance.py configs/s06_distance.yaml                       # LLM-дуги: reports/06_distance.md
+.venv/bin/python src/s06_distance.py configs/s06_distance.yaml --secondary --sample   # классификатор, 10 % корпуса
+.venv/bin/python src/s06_distance.py configs/s06_distance.yaml --secondary            # классификатор, полный корпус
+```
+
 ### Партия для студентов
 
 ```bash
@@ -225,5 +233,6 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/02_students_batch1*.html`, `02_students_power.md` | `s02_students_batch.py` |
 | `reports/05_mean_arcs.md` | `s05_mean_arcs.py` |
 | `reports/05_ending.md` | `s05_ending.py` (шаги contrast → sample → разметка → analyze) |
+| `reports/06_distance.md`, `06_distance_secondary[_sample].md` | `s06_distance.py` |
 
 Рисунки — в `reports/figures/`, их имена начинаются с номера этапа.
