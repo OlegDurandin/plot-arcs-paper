@@ -1,0 +1,18 @@
+# Ворота 6 (2026-11-26): анонимная копия репозитория для рецензирования «Диалога».
+# Копия — из закоммиченного состояния (git archive HEAD): data/, .env и прочее неотслеживаемое туда не попадает.
+out_dir: ../plot-arcs-paper-anon          # вне рабочего репозитория; перезаписывается целиком
+author: "Anonymous <anonymous@example.org>"
+message: "Anonymous version for double-blind review"
+# что вычищается (регулярные выражения, без учёта регистра) → на что заменяется
+replace:
+  - ['[\w.+-]+@[\w-]+\.[\w.]+', '[e-mail скрыт]']
+  - ['github\.com/OlegDurandin/plot-arcs-paper', '[репозиторий скрыт]']
+  - ['OlegDurandin', '[автор скрыт]']
+  - ['durandin\.oleg', '[автор скрыт]']
+  - ['durandin', '[автор скрыт]']
+  - ['/Users/[^/\s`]+', '~']
+# после замены ни один из этих шаблонов не должен встречаться (иначе — ошибка)
+forbid: ['durandin', 'oleg\.', 'OlegDurandin', '@gmail', '/Users/']
+text_ext: [.md, .py, .yaml, .yml, .txt, .csv, .html, .json, .cfg, .toml, .gitignore]
+# не включаются в копию: сами содержат список вычищаемых строк
+exclude: [configs/s10_anonymize.yaml, src/s10_anonymize.py]
