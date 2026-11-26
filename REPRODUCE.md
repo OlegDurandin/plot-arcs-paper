@@ -161,6 +161,27 @@ LLM-дуги (главный сигнал для сравнений со ска�
 
 Выборочный прогон — тот же порядок с `--sample` (`reports/04_nulls_sample.md`).
 
+### Этап 5. RQ1 — средние дуги; концовка сказки (Ворота 5)
+
+```bash
+.venv/bin/python src/s05_mean_arcs.py configs/s05_mean_arcs.yaml                  # reports/05_mean_arcs.md
+.venv/bin/python src/s05_ending.py configs/s05_ending.yaml --step contrast         # 2.1: концовка без последнего сегмента
+.venv/bin/python src/s05_ending.py configs/s05_ending.yaml --step sample           # 2.2: ключ предложений + оценка стоимости
+.venv/bin/python src/s02_llm_api.py configs/s05_ending.yaml --key sent --limit 50  # пробный прогон
+.venv/bin/python src/s02_llm_api.py configs/s05_ending.yaml --key sent             # остальное (стоп 95 ₽)
+.venv/bin/python src/s05_ending.py configs/s05_ending.yaml --step analyze          # 2.3–2.4: reports/05_ending.md
+```
+
+### Партия для студентов
+
+```bash
+.venv/bin/python src/s02_beginnings.py configs/s02_ensemble.yaml                 # reports/02_tale_beginnings.md
+.venv/bin/python src/s02_students_batch.py configs/s02_students.yaml             # мощность + партия v2 (Ворота 5)
+```
+
+Отдаются `reports/02_students_batch1.html` (инструкция) и страницы разметчиков `reports/02_students_batch1_{A,B}.html`.
+`reports/02_students_batch0.html` (`s02_students_batch0.py`) — первая версия, устарела, не отдавать.
+
 ## 5. Шаги с LLM (provod.ai)
 
 - Ключ — в файле `.env` в корне (в git не попадает):
@@ -200,5 +221,9 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/04_archetype_null.md` | `s04_archetype_null.py` |
 | `reports/04_selection_weights.md` | `s04_selection.py` |
 | `reports/04_fanfic_endings.md` | `s04_fanfic_endings.py` |
+| `reports/02_tale_beginnings.md` | `s02_beginnings.py` |
+| `reports/02_students_batch1*.html`, `02_students_power.md` | `s02_students_batch.py` |
+| `reports/05_mean_arcs.md` | `s05_mean_arcs.py` |
+| `reports/05_ending.md` | `s05_ending.py` (шаги contrast → sample → разметка → analyze) |
 
 Рисунки — в `reports/figures/`, их имена начинаются с номера этапа.

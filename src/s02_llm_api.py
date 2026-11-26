@@ -8,6 +8,9 @@
     .venv/bin/python src/s02_llm_api.py configs/s02_llm_api.yaml --key gold   [--model M] [--limit N]
     .venv/bin/python src/s02_llm_api.py configs/s02_llm_api.yaml --key silver [--model M] [--limit N]
     .venv/bin/python src/s02_llm_api.py configs/s02_llm_arcs.yaml --key arcs   (LLM-дуги, Ворота 2 п. 2.2)
+    .venv/bin/python src/s02_llm_api.py configs/s05_ending.yaml   --key sent   (предложения концовок, Ворота 5 п. 2.2)
+Ключ sent: строки с непустым context размечаются той же инструкцией с блоком «Предшествующий контекст (не оценивай)»;
+строки без context — исходной инструкцией.
 Выход: data/processed/s02/llm_api/{key}__{model}.csv
 """
 from __future__ import annotations
@@ -31,6 +34,13 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, load_config  # noqa: E402
 from s02_llm_annotate import INSTRUCTION, parse  # noqa: E402
+
+# та же инструкция + блок контекста перед фрагментом (Ворота 5, п. 2.2); оценивается только фрагмент
+SENT_INSTRUCTION = INSTRUCTION.replace(
+    "Фрагмент:\n",
+    "Предшествующий контекст (только для понимания — его не оценивай):\n\"\"\"\n{context}\n\"\"\"\n\n"
+    "Фрагмент (оцени только его):\n")
+assert SENT_INSTRUCTION != INSTRUCTION
 
 FIELDS = ["uid", "tone", "emotion", "skip", "model", "model_returned", "prompt_tokens", "completion_tokens",
           "reasoning_tokens", "cost_rub", "finish_reason", "raw"]
@@ -58,10 +68,13 @@ def spent_rub(out: Path) -> float:
     return s
 
 
-def call(env, api, model, text, emotions):
+def call(env, api, model, text, emotions, context=None):
+    em = ", ".join(emotions)
+    prompt = (SENT_INSTRUCTION.format(emotions=em, text=text, context=context) if context
+              else INSTRUCTION.format(emotions=em, text=text))
     body = {"model": model, "temperature": api["temperature"], "max_tokens": api["max_tokens"],
             "reasoning": api["reasoning"],
-            "messages": [{"role": "user", "content": INSTRUCTION.format(emotions=", ".join(emotions), text=text)}]}
+            "messages": [{"role": "user", "content": prompt}]}
     data = json.dumps(body).encode()
     for attempt in range(api["retries"] + 1):
         req = urllib.request.Request(env["PROVOD_BASE_URL"].rstrip("/") + "/chat/completions", data=data,
@@ -85,7 +98,7 @@ def call(env, api, model, text, emotions):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("config")
-    ap.add_argument("--key", choices=["gold", "silver", "arcs"], required=True)
+    ap.add_argument("--key", choices=["gold", "silver", "arcs", "sent"], required=True)
     ap.add_argument("--model", default=None)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--max-tokens", type=int, default=None, help="для моделей, у которых рассуждения не отключаются")
@@ -100,7 +113,10 @@ def main():
     out = ROOT / cfg["out_dir"]
     out.mkdir(parents=True, exist_ok=True)
     kf = ROOT / ecfg["out_dir"] / "gold_key.parquet" if args.key == "gold" else out / f"{args.key}_key.parquet"
-    key = pd.read_parquet(kf, columns=["uid", "text"])           # только uid и текст
+    cols = ["uid", "text"] + (["context"] if args.key == "sent" else [])
+    key = pd.read_parquet(kf, columns=cols)                       # только uid, текст (и контекст для sent)
+    if "context" not in key:
+        key["context"] = None
     of = out / f"{args.key}__{model.replace('/', '_')}.csv"
     done = set(pd.read_csv(of)["uid"]) if of.exists() else set()
     todo = key[~key["uid"].isin(done)].sample(frac=1.0, random_state=cfg["seed"])   # порядок отправки случаен (прогноз по первым N)
@@ -116,17 +132,17 @@ def main():
     state = {"spent": spent0, "n": 0, "err": 0, "stopped": False}
     t0 = time.time()
 
-    def job(uid, text):
+    def job(uid, text, context):
         if state["stopped"]:
             return uid, None
-        return uid, call(env, cfg["api"], model, text, emotions)
+        return uid, call(env, cfg["api"], model, text, emotions, context if isinstance(context, str) and context else None)
 
     new = not of.exists()
     with of.open("a", newline="", encoding="utf-8") as f, ThreadPoolExecutor(cfg["api"]["workers"]) as ex:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         if new:
             w.writeheader()
-        futs = [ex.submit(job, r.uid, r.text) for r in todo.itertuples()]
+        futs = [ex.submit(job, r.uid, r.text, r.context) for r in todo.itertuples()]
         for fu in as_completed(futs):
             uid, d = fu.result()
             if d is None:
