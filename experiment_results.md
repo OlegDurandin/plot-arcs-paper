@@ -1141,7 +1141,7 @@ log SNR. Медианы весов по формам 0,64–0,81 (classifier) �
 - **2.4. Сравнение с рассказами.** Доработка после первого прогона, до выводов: добавлены меры «только сегмент 20» и «последнее предложение».
 - **3. Партия студентов пересобрана** (`s02_students_batch.py`, `configs/s02_students.yaml`). Старая версия — `reports/02_students_batch0.html`, `s02_students_batch0.py`, `configs/s02_students_batch0.yaml`, с пометкой «не отдавать».
 
-**Параметры:** `configs/s05_ending.yaml`, `configs/s02_students.yaml`; коммиты 67a5404 (2.1, ключ 2.2, партия v2) и следующий (анализ 2.2–2.4).
+**Параметры:** `configs/s05_ending.yaml`, `configs/s02_students.yaml`; коммиты 67a5404 (2.1, ключ 2.2, партия v2) и b857080 (анализ 2.2–2.4).
 
 **Результаты:** `reports/05_ending.md`, `reports/figures/05_ending_sentences.png`, `reports/02_students_power.md`.
 
