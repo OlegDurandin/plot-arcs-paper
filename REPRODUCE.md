@@ -143,6 +143,9 @@ LLM-дуги (главный сигнал для сравнений со ска�
 # Этап 3s — Plot Arceology (субтитры Ororo и проза + фанфики); архив data/raw/Ororo(Final, 05.11.2026).zip,
 # ororo.sqlite распакована из него в data/interim/ororo/. Сначала --sample, затем без флага (≈ 1 ч 20 мин всего).
 for s in subs_ingest build train infer profiles; do .venv/bin/python src/s03s_arceology.py configs/s03s_arceology.yaml $s; done
+# v2 (в статьях): дочистка ремарок и словаря субтитров. Перед полным прогоном скопировать прозу из v1:
+#   data/processed/s03s/full/{prose,prose_meta.parquet,theta/prose_K*} → data/processed/s03s_v2/full/, models/s03s/full/lda_prose_K*.bin → models/s03s_v2/full/
+for s in subs_ingest build train infer profiles; do .venv/bin/python src/s03s_arceology.py configs/s03s_arceology_v2.yaml $s; done
 .venv/bin/python src/s03_embed_report.py configs/s03_robust.yaml --sample   # таблицы по ≈ 10 шардам
 .venv/bin/python src/s03_embed_report.py configs/s03_robust.yaml            # reports/03_embeddings_full.md
 ```
@@ -242,6 +245,7 @@ for s in subs_ingest build train infer profiles; do .venv/bin/python src/s03s_ar
 | `reports/05_mean_arcs.md` | `s05_mean_arcs.py` |
 | `reports/05_ending.md` | `s05_ending.py` (шаги contrast → sample → разметка → analyze) |
 | `reports/05_ending_lex.md` | `s05_ending_lex.py` (после разметки по предложениям; без LLM) |
+| `reports/03s_arceology_v2[_sample].md`, `figures/03s_profiles_K{50,100,127}_v2.*` | `s03s_arceology.py` с `configs/s03s_arceology_v2.yaml` (основная версия в статьях) |
 | `reports/03s_arceology[_sample].md`, `figures/03s_profiles_K127.*` | `s03s_arceology.py` (шаги subs_ingest → build → train → infer → profiles); LDA в 8 потоков — побитово не воспроизводится |
 | `reports/06_distance.md`, `06_distance_secondary[_sample].md` | `s06_distance.py` |
 | `reports/03_embeddings_full[_sample].md` | `s03_embed_report.py` |

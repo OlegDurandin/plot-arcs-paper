@@ -40,6 +40,9 @@ from s01_segment import relative_segments  # noqa: E402
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")
 TAG_RE = re.compile(r"<[^>]*>|\{[^}]*\}|\[[^\]]*\]")
 SDH_RE = re.compile(r"\((?:[^()\s]+\s*){1,4}\)")
+# v2 (2026-11-27): ремарки с пробелами у скобок «( смеётся )», в звёздочках «*вздыхает*» и заглавными «ОНА ВЗДЫХАЕТ»
+SDH2_RE = re.compile(r"\(\s*(?:[^()\s]+\s*){1,6}\)|\*[^*\n]{1,60}\*")
+CAPS_RE = re.compile(r"(?<![А-Яа-яЁёA-Za-z])[А-ЯЁ][А-ЯЁ-]+(?:[\s,.:!]+[А-ЯЁ][А-ЯЁ-]+)*")
 LETTER = re.compile(r"[^\W\d_]")
 CYR = re.compile(r"[А-Яа-яЁё]")
 CFG: dict = {}
@@ -52,7 +55,13 @@ def out_dir(cfg, sample):
 
 
 # ------------------------------------------------------------------ субтитры: разбор
-def parse_srt(raw: bytes):
+def _caps(m):
+    """Заглавный отрезок — ремарка, если в нём ≥ 2 слов или слово ≥ 4 букв (аббревиатуры США, ФБР остаются)."""
+    w = re.findall(r"[А-ЯЁ-]+", m.group(0))
+    return " " if len(w) >= 2 or max(len(x) for x in w) >= 4 else m.group(0)
+
+
+def parse_srt(raw: bytes, sdh_v2: bool = False):
     for enc in ("utf-8-sig", "cp1251", "utf-16"):
         try:
             txt = raw.decode(enc)
@@ -77,6 +86,8 @@ def parse_srt(raw: bytes):
         t1 = ((g[4] * 60 + g[5]) * 60 + g[6]) * 1000 + g[7]
         text = " ".join(TAG_RE.sub("", ln) for ln in lines[k + 1:])
         text = SDH_RE.sub(" ", text)                       # ремарки «(смеётся)», «(вздыхает)»: ≤ 4 слов в скобках
+        if sdh_v2:
+            text = CAPS_RE.sub(_caps, SDH2_RE.sub(" ", text))
         text = re.sub(r"(^|\s)[-–—]\s*", r"\1", text).strip()
         if text:
             cues.append((t0, t1, text))
@@ -108,7 +119,7 @@ def ingest_shard(args):
     rows, n_ok = [], 0
     with zipfile.ZipFile(zpath) as z:
         for ep, path in items:
-            cues = parse_srt(z.read(path))
+            cues = parse_srt(z.read(path), sc.get("sdh_v2", False))
             cues = [c for c in cues if not cre.search(c[2])]
             dedup = []
             for c in cues:
@@ -236,6 +247,18 @@ def cmd_build(cfg, sample):
     if len(d) > target:
         d = d.sample(target, random_state=cfg["seed"]).reset_index(drop=True)
     vocab, freq = make_vocab(d, tcfg["vocab"])
+    sv = cfg["subs"].get("vocab_extra")
+    if sv:   # v2: имена персонажей и прочая лексика одного сериала — не тема корпуса
+        n_occ, by_unit, units = Counter(), {}, {}
+        for u, t in zip(d["unit"], d["tokens"]):
+            for w, c in Counter(t.split()).items():
+                n_occ[w] += c
+                by_unit.setdefault(w, Counter())[u] += c
+        keep = [w for w in vocab if len(by_unit[w]) >= sv["min_units"]
+                and max(by_unit[w].values()) / n_occ[w] <= sv["max_unit_share"]]
+        drop = sorted(set(vocab) - set(keep), key=lambda w: -n_occ[w])
+        print(f"субтитры, доп. фильтр словаря: убрано {len(drop)} лемм; самые частые: {drop[:40]}")
+        vocab = keep
     (od / "subs").mkdir(exist_ok=True)
     d.to_parquet(od / "subs" / "train_docs.parquet", index=False)
     (od / "subs" / "vocab.json").write_text(json.dumps(dict(vocab=vocab, removed_frequent=freq), ensure_ascii=False))
@@ -529,7 +552,7 @@ def cmd_profiles(cfg, sample):
     mdir = ROOT / cfg["models_dir"] / ("sample" if sample else "full")
     pc = cfg["profiles"]
     Ks = cfg["train"]["sample_K"] if sample else cfg["train"]["K"]
-    figK = Ks[-1] if sample else pc["fig_K"]
+    figKs = [Ks[-1]] if sample else (pc["fig_K"] if isinstance(pc["fig_K"], list) else [pc["fig_K"]])
     rng = np.random.default_rng(cfg["seed"])
     smeta = pd.read_parquet(od / "subs_meta.parquet").set_index("doc_id")
     pmeta = pd.read_parquet(od / "prose_meta.parquet").set_index("doc_id")
@@ -595,8 +618,8 @@ def cmd_profiles(cfg, sample):
         L.append(mdtab(pd.DataFrame(rows)) + "\n")
         same = [ts[1][i] == tp_[1][best[i]] for i in mutual if S[i, best[i]] >= 0.5]
         L.append(f"Пар со сходством ≥ 0,5: {len(same)}; из них с одинаковым классом формы профиля — {sum(same)}.\n")
-    # рисунок
-    if f"subs_K{figK}" in res:
+    # рисунки
+    for figK in figKs:
         classes = ["рост к концу", "спад к концу", "середина", "края"]
         fig, axes = plt.subplots(2, 4, figsize=(15, 7.2), sharex=True)
         cols = ["#2a78d6", "#eb6834", "#1baf7a", "#8e5bd0"]
@@ -623,11 +646,11 @@ def cmd_profiles(cfg, sample):
                     ax.set_xlabel("позиция сегмента (N = 20)")
         fig.suptitle(f"Позиционные профили тем (LDA, K = {figK}; в каждом классе — до {pc['fig_per_class']} тем с наибольшим |z|; 95 % ДИ — бутстрэп по сериалам / авторам)", fontsize=11)
         fig.tight_layout(rect=(0, 0, 1, 0.95))
-        fp = ROOT / "reports" / "figures" / f"03s_profiles_K{figK}{'_sample' if sample else ''}.png"
+        fp = ROOT / "reports" / "figures" / f"03s_profiles_K{figK}{cfg.get('report_suffix', '')}{'_sample' if sample else ''}.png"
         fig.savefig(fp, dpi=200)
         fig.savefig(fp.with_suffix(".pdf"))
         L.append(f"\n![профили](figures/{fp.name})\n")
-    rep = ROOT / "reports" / f"03s_arceology{'_sample' if sample else ''}.md"
+    rep = ROOT / "reports" / f"03s_arceology{cfg.get('report_suffix', '')}{'_sample' if sample else ''}.md"
     rep.write_text("\n".join(L), encoding="utf-8")
     print("отчёт:", rep)
 
