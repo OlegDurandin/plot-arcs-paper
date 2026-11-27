@@ -140,6 +140,9 @@ LLM-дуги (главный сигнал для сравнений со ска�
 .venv/bin/python src/s03_robust.py configs/s03_robust.yaml report           # reports/03_robustness.md
 .venv/bin/python src/s03_embed.py  configs/s03_robust.yaml --scope sample   # оценка времени на 2 % текстов
 .venv/bin/python src/s03_embed.py  configs/s03_robust.yaml --scope full     # весь корпус N20 (фактически ≈ 19 ч), продолжает с места
+# Этап 3s — Plot Arceology (субтитры Ororo и проза + фанфики); архив data/raw/Ororo(Final, 05.11.2026).zip,
+# ororo.sqlite распакована из него в data/interim/ororo/. Сначала --sample, затем без флага (≈ 1 ч 20 мин всего).
+for s in subs_ingest build train infer profiles; do .venv/bin/python src/s03s_arceology.py configs/s03s_arceology.yaml $s; done
 .venv/bin/python src/s03_embed_report.py configs/s03_robust.yaml --sample   # таблицы по ≈ 10 шардам
 .venv/bin/python src/s03_embed_report.py configs/s03_robust.yaml            # reports/03_embeddings_full.md
 ```
@@ -239,6 +242,7 @@ LLM-дуги (главный сигнал для сравнений со ска�
 | `reports/05_mean_arcs.md` | `s05_mean_arcs.py` |
 | `reports/05_ending.md` | `s05_ending.py` (шаги contrast → sample → разметка → analyze) |
 | `reports/05_ending_lex.md` | `s05_ending_lex.py` (после разметки по предложениям; без LLM) |
+| `reports/03s_arceology[_sample].md`, `figures/03s_profiles_K127.*` | `s03s_arceology.py` (шаги subs_ingest → build → train → infer → profiles); LDA в 8 потоков — побитово не воспроизводится |
 | `reports/06_distance.md`, `06_distance_secondary[_sample].md` | `s06_distance.py` |
 | `reports/03_embeddings_full[_sample].md` | `s03_embed_report.py` |
 | `reports/10_article_tables_figures.md` | вручную (черновик этапа 10) |

@@ -1,0 +1,56 @@
+# Этап 3s — Plot Arceology на двух корпусах: субтитры сериалов (Ororo, русские субтитры) и проза + фанфики.
+# Запрос пользователя 2026-11-27: темы каждого корпуса (отдельные модели), позиционные профили тем по Schmidt,
+# K ∈ {50, 100, 127} (127 — как у Schmidt 2014: «since I only have 127 topics»).
+seed: 42
+topics_config: configs/s03_topics.yaml     # те же правила словаря (POS, PROPN, стоп-слова, min_texts, max_doc_share)
+out_dir: data/processed/s03s
+models_dir: models/s03s
+
+subs:
+  zip: "data/raw/Ororo(Final, 05.11.2026).zip"
+  sqlite: data/interim/ororo/ororo.sqlite   # распакована из архива (data/raw не трогаем)
+  language: RU
+  min_cyrillic_share: 0.8                   # доля кириллических букв среди букв эпизода
+  min_words: 1000                           # эпизод короче — не берём
+  # реплики-титры: переводчики, релиз-группы, сайты, реклама, «музыка»
+  credit_re: "(?i)(перев[её]д|переводчик|субтитр|синхрониз|релиз|notabenoid|ororo|озвуч|корректор|редактор субт|tvshows|www\\.|https?:|\\.com|\\.ru\\b|\\.org|♪|♫)"
+  shards: 32
+  sample_shows: 120                         # выборочный прогон: столько сериалов
+  sample_eps_per_show: 3
+  eps_per_show_analysis: 10                 # для профилей: ≤ 10 случайных эпизодов на сериал (единица вывода — сериал)
+
+prose:
+  strata: [story, novella, povest, novel, fanfic]
+  texts_per_stratum: 3000                   # для профилей: ≤ 1 текста на автора
+  sample_texts_per_stratum: 200
+
+train:
+  chunk_tokens: 200
+  subs_eps_per_show: 3                      # обучающая выборка субтитров: ≤ 3 эпизода на сериал
+  subs_chunks: 40000                        # столько же, сколько у прозы + фанфиков (5 групп × 8 000, из этапа 3)
+  max_chunks_per_text: 20
+  K: [50, 100, 127]
+  iterations: 1000
+  burn_in: 100
+  alpha: 0.1
+  eta: 0.01
+  optim_interval: 10
+  workers: 8
+  sample_chunks: 4000
+  sample_K: [20]
+  sample_iterations: 200
+
+infer:
+  N: 20                                     # равные по словам части (по границам реплик/предложений), как у прозы
+  N_time: 12                                # субтитры: двенадцатые части экранного времени, как у Schmidt (проверка)
+  iterations: 100
+  workers: 8
+
+profiles:
+  n_perm: 200                               # нулевая модель: перестановка сегментов внутри текста
+  bootstrap: 1000                           # ДИ профилей: бутстрэп по сериалам / авторам
+  fdr_q: 0.05
+  fig_K: 127
+  fig_per_class: 4                          # на рисунке: до 4 тем на класс формы (рост, спад, середина, края),
+                                            # отбор — по |z| компоненты среди значимых (FDR), правило задано до просмотра
+  match_top: 30                             # сопоставление тем двух корпусов: таблица 30 лучших пар
