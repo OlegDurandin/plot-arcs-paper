@@ -553,7 +553,13 @@ def cmd_profiles(cfg, sample):
     pc = cfg["profiles"]
     Ks = cfg["train"]["sample_K"] if sample else cfg["train"]["K"]
     figKs = [Ks[-1]] if sample else (pc["fig_K"] if isinstance(pc["fig_K"], list) else [pc["fig_K"]])
-    rng = np.random.default_rng(cfg["seed"])
+    def stream(K, corp, split):
+        # независимый поток для каждой пары (K, корпус, разбиение): классы одного корпуса не зависят от другого
+        # (v2: до 2026-11-27 был общий поток, и пересчёт субтитров сдвигал классы прозы)
+        if not cfg.get("independent_streams", False):
+            return shared
+        return np.random.default_rng([cfg["seed"], K, ["subs", "prose"].index(corp), ["words", "time"].index(split)])
+    shared = np.random.default_rng(cfg["seed"])
     smeta = pd.read_parquet(od / "subs_meta.parquet").set_index("doc_id")
     pmeta = pd.read_parquet(od / "prose_meta.parquet").set_index("doc_id")
     name = {"subs": "субтитры сериалов (Ororo, русские субтитры)", "prose": "проза + фанфики (Проза.ру, Ficbook)"}
@@ -572,7 +578,7 @@ def cmd_profiles(cfg, sample):
             key = f"{corp}_K{K}"
             ids, X = load_theta(od, key, "words")
             units = meta.loc[ids, "unit"].to_numpy()
-            pr = corpus_profiles(X, units, rng, cfg)
+            pr = corpus_profiles(X, units, stream(K, corp, "words"), cfg)
             cls, sig = classify(pr, pc["fdr_q"])
             tj = json.loads((od / corp / f"topics_K{K}.json").read_text())
             tab = topic_table(pr, cls, tj, K)
@@ -584,7 +590,7 @@ def cmd_profiles(cfg, sample):
             L.append("Классы формы профиля: " + ", ".join(f"{k} — {v}" for k, v in cnt.items()) + ".\n")
             if corp == "subs":
                 ids_t, Xt = load_theta(od, key, "time")
-                prt = corpus_profiles(Xt, smeta.loc[ids_t, "unit"].to_numpy(), rng, cfg)
+                prt = corpus_profiles(Xt, smeta.loc[ids_t, "unit"].to_numpy(), stream(K, "subs", "time"), cfg)
                 clt, _ = classify(prt, pc["fdr_q"])
                 agree = np.mean(clt == cls)
                 r1 = np.corrcoef(pr["z1"], prt["z1"])[0, 1]

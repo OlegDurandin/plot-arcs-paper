@@ -9,6 +9,7 @@ topics_config: configs/s03_topics.yaml     # те же правила слова
 out_dir: data/processed/s03s_v2
 models_dir: models/s03s_v2
 report_suffix: _v2
+independent_streams: true                   # 2026-11-27, решение пользователя: свой поток случайных чисел на (K, корпус, разбиение)
 
 subs:
   zip: "data/raw/Ororo(Final, 05.11.2026).zip"
